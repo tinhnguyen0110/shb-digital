@@ -26,9 +26,9 @@ beforeEach(() => {
 describe('ControlTower', () => {
   it('tab Hàng chờ: list phiếu pending + nút Duyệt/Từ chối', async () => {
     render(<ControlTower onBack={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText(/disburse/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Phê duyệt giải ngân')).toBeInTheDocument());
     expect(screen.getByTestId('queue-row-a1')).toBeInTheDocument();
-    expect(screen.getByText(/Hàng chờ phê duyệt \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Yêu cầu chờ phê duyệt \(1\)/)).toBeInTheDocument();
   });
 
   it('duyệt từ queue → decideApproval + rời hàng chờ', async () => {
@@ -42,23 +42,22 @@ describe('ControlTower', () => {
 
   it('tab Nhật ký: audit rows + filter', async () => {
     render(<ControlTower onBack={vi.fn()} />);
-    fireEvent.click(screen.getByText('Nhật ký tool'));
-    await waitFor(() => expect(screen.getByText('credit_assess')).toBeInTheDocument());
-    expect(screen.getByLabelText('Lọc conv_id')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Nhật ký hoạt động'));
+    await waitFor(() => expect(screen.getByText('Đánh giá thông tin tín dụng')).toBeInTheDocument());
+    expect(screen.getByLabelText('Lọc theo mã hồ sơ')).toBeInTheDocument();
   });
 
   it('tab Trạng thái: đếm ca theo status', async () => {
     render(<ControlTower onBack={vi.fn()} />);
-    fireEvent.click(screen.getByText('Trạng thái đội'));
-    await waitFor(() => expect(screen.getByText(/Trạng thái đội — 2 ca/)).toBeInTheDocument());
-    // cost meter note (per-turn, không per-tool)
-    expect(screen.getByText(/Cost meter/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Tiến độ xử lý'));
+    await waitFor(() => expect(screen.getByText(/Tiến độ xử lý — 2 hồ sơ/)).toBeInTheDocument());
+    expect(screen.getByText(/Số liệu được tổng hợp theo từng hồ sơ/)).toBeInTheDocument();
   });
 
-  it('nút ← Workspace → onBack', () => {
+  it('nút quay lại → onBack', () => {
     const onBack = vi.fn();
     render(<ControlTower onBack={onBack} />);
-    fireEvent.click(screen.getByText(/Workspace/));
+    fireEvent.click(screen.getByText(/Quay lại/));
     expect(onBack).toHaveBeenCalled();
   });
 
@@ -68,22 +67,22 @@ describe('ControlTower', () => {
       multi: { text: 'đội thẩm định có nguồn', duration_s: 38, tool_calls: 4, cards: 2, conv_id: 'cX' },
     });
     render(<ControlTower onBack={vi.fn()} />);
-    fireEvent.click(screen.getByText(/So sánh/));
+    fireEvent.click(screen.getByText(/Đối chiếu kết quả/));
     fireEvent.click(screen.getByTestId('compare-run'));
     await waitFor(() => expect(screen.getByText('trả lời đơn')).toBeInTheDocument());
     expect(screen.getByText('đội thẩm định có nguồn')).toBeInTheDocument();
-    expect(screen.getByText(/4 tool/)).toBeInTheDocument(); // metric multi
+    expect(screen.getByText(/4 bước xử lý/)).toBeInTheDocument();
   });
 
-  it('compare partial (multi null) → cột single + note partial', async () => {
+  it('compare partial (multi null) → cột single + thông báo chưa có kết quả', async () => {
     vi.spyOn(conversationApi, 'runCompare').mockResolvedValue({
       single: { text: 'chỉ single', duration_s: 4 },
       multi: null,
     });
     render(<ControlTower onBack={vi.fn()} />);
-    fireEvent.click(screen.getByText(/So sánh/));
+    fireEvent.click(screen.getByText(/Đối chiếu kết quả/));
     fireEvent.click(screen.getByTestId('compare-run'));
     await waitFor(() => expect(screen.getByText('chỉ single')).toBeInTheDocument());
-    expect(screen.getByText(/partial/)).toBeInTheDocument();
+    expect(screen.getByText(/Chưa có kết quả từ phương thức này/)).toBeInTheDocument();
   });
 });

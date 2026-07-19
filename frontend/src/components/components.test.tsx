@@ -47,33 +47,33 @@ describe('MessageBubble', () => {
 });
 
 describe('TaskBadge', () => {
-  it('running → dot + nhãn "đang làm…" + tone run', () => {
+  it('running → dot + nhãn "đang xử lý…" + tone run', () => {
     const { container } = render(<TaskBadge task={task('running')} />);
-    expect(screen.getByText(/đang làm/)).toBeInTheDocument();
+    expect(screen.getByText(/đang xử lý/)).toBeInTheDocument();
     expect(container.querySelector('.task-badge--run')).toBeTruthy();
     expect(container.querySelector('.task-badge__dot')).toBeTruthy();
   });
 
-  it('done → "✓ xong" + tone pass, không có dot chạy', () => {
+  it('done → "✓ hoàn tất" + tone pass, không có dot chạy', () => {
     const { container } = render(<TaskBadge task={task('done')} />);
-    expect(screen.getByText(/✓ xong/)).toBeInTheDocument();
+    expect(screen.getByText(/✓ hoàn tất/)).toBeInTheDocument();
     expect(container.querySelector('.task-badge--pass')).toBeTruthy();
     expect(container.querySelector('.task-badge__dot')).toBeFalsy();
   });
 
-  it('failed → "✗ lỗi" + tone fail', () => {
+  it('failed → "✗ cần kiểm tra" + tone fail', () => {
     const { container } = render(<TaskBadge task={task('failed')} />);
-    expect(screen.getByText(/✗ lỗi/)).toBeInTheDocument();
+    expect(screen.getByText(/✗ cần kiểm tra/)).toBeInTheDocument();
     expect(container.querySelector('.task-badge--fail')).toBeTruthy();
   });
 
-  it('role Việt hoá: credit → "Tín dụng"', () => {
+  it('role Việt hoá: credit → "Thẩm định tín dụng"', () => {
     render(<TaskBadge task={task('running', 'credit')} />);
-    expect(screen.getByText(/Tín dụng/)).toBeInTheDocument();
+    expect(screen.getByText(/Thẩm định tín dụng/)).toBeInTheDocument();
   });
 
-  it('role động lạ → hiển thị raw role (không hardcode enum — CONTRACT §3)', () => {
+  it('role động lạ → dùng nhãn nghiệp vụ an toàn', () => {
     render(<TaskBadge task={task('running', 'risk')} />);
-    expect(screen.getByText(/risk/)).toBeInTheDocument();
+    expect(screen.getByText(/Bộ phận nghiệp vụ/)).toBeInTheDocument();
   });
 });

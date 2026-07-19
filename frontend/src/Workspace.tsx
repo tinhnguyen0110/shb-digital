@@ -6,6 +6,7 @@
 // onAuthExpired khi gặp 401 mid-session (cookie hết hạn).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutDashboard, RadioTower } from 'lucide-react';
 import { conversationApi, USE_MOCK_API } from './api';
 import { ApiRequestError } from './api/client';
 import { useConversationSSE, type ConversationSSEHandlers } from './hooks/useConversationSSE';
@@ -18,7 +19,10 @@ import { TaskBadge } from './components/TaskBadge';
 import { Canvas } from './components/Canvas';
 import { TraceBlock } from './components/TraceBlock';
 import { SubAgentView } from './components/SubAgentView';
+import { ThemeToggle } from './components/ThemeToggle';
 import { roleLabel } from './roles';
+import { userRoleLabel } from './uiCopy';
+import type { ThemeMode } from './hooks/useTheme';
 import type {
   AuditRow,
   AuthUser,
@@ -43,22 +47,31 @@ function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
 }
 
 const CONV_STATUS_LABEL: Record<ConversationStatus, string> = {
-  idle: 'Sẵn sàng',
-  running: 'Đội đang xử lý…',
+  idle: 'Mới tiếp nhận',
+  running: 'Đang thẩm định…',
   waiting_approval: 'Chờ phê duyệt',
   done: 'Hoàn tất',
-  failed: 'Lỗi',
+  failed: 'Cần bổ sung',
 };
-
-const ROLE_LABEL_USER: Record<AuthUser['role'], string> = { customer: 'Khách hàng', user: 'RM', admin: 'Quản lý' };
 
 interface Props {
   user: AuthUser;
   onAuthExpired: () => void;
+  onOpenPortal?: () => void;
   onOpenTower?: () => void; // admin: mở Control Tower (D-19)
+  theme?: ThemeMode;
+  onToggleTheme?: () => void;
 }
 
-export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
+export function Workspace({
+  user,
+  onAuthExpired,
+  onOpenPortal,
+  onOpenTower,
+  theme = 'light',
+  onToggleTheme = () => {},
+}: Props) {
+  const isCustomer = user.role === 'customer';
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -106,7 +119,7 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        setListError(handleError(err, 'Không tải được danh sách ca'));
+        setListError(handleError(err, 'Chưa tải được danh sách hồ sơ.'));
       });
     return () => {
       alive = false;
@@ -145,11 +158,12 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
   // - toolcall: CÓ id (khớp audit row.id) → DEDUP upsert (reload GET /api/audit + SSE cùng id không trùng).
   // - thinking: KHÔNG id, LIVE-only (không persist) → LUÔN append theo thứ tự đến (mất khi reload — trace tạm).
   const addTrace = useCallback((item: TraceItem) => {
+    if (isCustomer) return;
     setTrace((prev) => {
       if (item.kind === 'tool' && prev.some((t) => t.kind === 'tool' && t.id === item.id)) return prev;
       return [...prev, item];
     });
-  }, []);
+  }, [isCustomer]);
 
 
   const appendText = useCallback((turnId: string, chunk: string) => {
@@ -228,20 +242,22 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
     conversationApi
       .getConversation(id)
       .then(applyFullState)
-      .catch((err: unknown) => setLoadError(handleError(err, 'Không tải được nội dung ca')));
+      .catch((err: unknown) => setLoadError(handleError(err, 'Chưa tải được nội dung hồ sơ.')));
     // hydrate trace TOOLCALL từ DB (GET /api/audit?conv_id) — reload/mở lại ca thấy trace lại
     // (T4-2 fix: thinking live-only không khôi phục; toolcall persist → dựng lại). SSE live sau
     // upsert dedup theo id (addTrace). id audit row.id khớp toolcall SSE id → không trùng.
-    conversationApi
-      .auditByConv(id)
-      .then((rows) => {
-        if (id !== activeIdRef.current) return; // đổi ca giữa chừng → bỏ
-        setTrace(rows.map(auditToTrace));
-      })
-      .catch(() => {
-        // audit lỗi không chí mạng — trace live vẫn chạy, chỉ mất history khi reload
-      });
-  }, [applyFullState, handleError]);
+    if (!isCustomer) {
+      conversationApi
+        .auditByConv(id)
+        .then((rows) => {
+          if (id !== activeIdRef.current) return; // đổi ca giữa chừng → bỏ
+          setTrace(rows.map(auditToTrace));
+        })
+        .catch(() => {
+          // audit lỗi không chí mạng — trace live vẫn chạy, chỉ mất history khi reload
+        });
+    }
+  }, [applyFullState, handleError, isCustomer]);
 
   // "+ Ca mới" = MỞ KHUNG SOẠN (draft), KHÔNG POST. Ca tạo lazy lúc gửi câu đầu (kèm provider/model
   // user chọn ở picker). Vậy picker cạnh nút gửi mới THẬT áp vào ca — không còn "chọn sau khi đã tạo".
@@ -262,7 +278,7 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
 
   // tạo ca THẬT (lazy) với provider/model đã chọn → trả conv để gửi câu đầu vào. Fail → ném cho caller.
   const createConversationForSend = useCallback(async (): Promise<Conversation> => {
-    const conv = await conversationApi.createConversation('Ca mới', pickProvider || undefined, pickModel || undefined);
+    const conv = await conversationApi.createConversation('Hồ sơ mới', pickProvider || undefined, pickModel || undefined);
     setConversations((prev) => upsertById(prev, conv));
     setListError(null);
     return conv;
@@ -284,7 +300,7 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
       conversationApi
         .sendChat(existingId, text)
         .catch((err: unknown) => {
-          setLoadError(handleError(err, 'Gửi câu hỏi thất bại'));
+          setLoadError(handleError(err, 'Chưa gửi được nội dung. Vui lòng thử lại.'));
           setConvStatus('idle');
         });
       return;
@@ -304,7 +320,7 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
         return conversationApi.sendChat(conv.id, text);
       })
       .catch((err: unknown) => {
-        setListError(handleError(err, 'Không tạo được ca / gửi câu hỏi thất bại'));
+        setListError(handleError(err, 'Chưa tạo được hồ sơ. Vui lòng thử lại.'));
         setConvStatus('idle');
       })
       .finally(() => setCreating(false));
@@ -317,11 +333,11 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
       .decideApproval(approvalId, decision, reason)
       .catch((err: unknown) => {
         if (err instanceof ApiRequestError && err.status === 409) {
-          setLoadError('Phiếu đã được quyết trước đó — đang đồng bộ lại.');
+          setLoadError('Yêu cầu này đã được xử lý trước đó. Hệ thống đang cập nhật lại hồ sơ.');
           const id = activeIdRef.current;
           if (id) conversationApi.getConversation(id).then((s) => { if (id === activeIdRef.current) applyFullState(s); }).catch(() => {});
         } else {
-          setLoadError(handleError(err, 'Quyết phiếu thất bại'));
+          setLoadError(handleError(err, 'Chưa ghi nhận được quyết định. Vui lòng thử lại.'));
         }
       });
   }, [handleError, applyFullState]);
@@ -339,20 +355,27 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
   // badge phiếu-bay (D-56, admin-only): poll approvals?pending 5s → số phiếu chờ. Non-admin → 0 (hook tự tắt).
   const pendingApprovals = useApprovalBadge(isAdmin);
   // sub đang xem (F2a). Nếu task biến mất (đổi ca) → focusedTask null → về Canvas.
-  const focusedTask = focusSub ? tasks.find((t) => t.id === focusSub) ?? null : null;
+  const focusedTask = !isCustomer && focusSub ? tasks.find((t) => t.id === focusSub) ?? null : null;
 
   return (
     <div className="ws">
       <header className="ws__topbar">
-        <span className="ws__logo">G</span>
-        <span className="ws__brand">Digital Expert Guild</span>
-        <span className="ws__subtitle">Workspace · SHB #132</span>
+        <span className="ws__logo">S</span>
+        <span className="ws__brand">SHB · Hỗ trợ thẩm định tín dụng</span>
+        <span className="ws__subtitle">Không gian tác nghiệp</span>
         <div className="ws__spacer" />
-        {USE_MOCK_API && <span className="ws__mockflag" title="VITE_USE_MOCK_API != false — dữ liệu mock, chưa nối backend thật">● MOCK API</span>}
-        <span className="ws__user">{user.username} · {ROLE_LABEL_USER[user.role]}</span>
+        {USE_MOCK_API && <span className="ws__mockflag" title="Môi trường trình diễn sử dụng dữ liệu mô phỏng">MÔI TRƯỜNG DEMO</span>}
+        <span className="ws__user">{user.username} · {userRoleLabel(user.role)}</span>
+        {onOpenPortal && (
+          <button className="ws__logout ws__mode-btn" onClick={onOpenPortal} type="button" data-testid="open-portal">
+            <LayoutDashboard size={14} aria-hidden="true" />
+            Cổng quản lý
+          </button>
+        )}
         {onOpenTower && (
           <button className="ws__logout ws__tower-btn" onClick={onOpenTower} type="button" data-testid="open-tower">
-            🗼 Control Tower
+            <RadioTower size={14} aria-hidden="true" />
+            Trung tâm giám sát
             {pendingApprovals > 0 && (
               <span className="ws__tower-badge" data-testid="tower-badge" aria-label={`${pendingApprovals} phiếu chờ duyệt`}>
                 {pendingApprovals}
@@ -360,6 +383,7 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
             )}
           </button>
         )}
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} className="ws__theme-btn" />
         <button className="ws__logout" onClick={onAuthExpired} type="button">Đăng xuất</button>
       </header>
 
@@ -377,16 +401,20 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
           {listError && <div className="ws__banner ws__banner--error">{listError}</div>}
           {!activeId && !drafting ? (
             <div className="ws__empty">
-              <div className="ws__empty-title">Chưa mở ca nào</div>
-              <div className="ws__empty-sub">Bấm “+ Ca mới” bên trái để bắt đầu một ca tư vấn.</div>
+              <div className="ws__empty-title">Chưa mở hồ sơ nào</div>
+              <div className="ws__empty-sub">Chọn “+ Hồ sơ mới” để bắt đầu tiếp nhận và thẩm định.</div>
             </div>
           ) : (
             <>
               <div className="ws__chat-head">
-                <div className="ws__chat-title">{drafting ? 'Ca mới (nháp)' : activeConv?.title ?? 'Ca'}</div>
+                <div className="ws__chat-title">{drafting ? 'Hồ sơ mới' : activeConv?.title ?? 'Hồ sơ'}</div>
                 <div className={`ws__chat-status ws__chat-status--${convStatus}`}>
                   {busy && <span className="status-dot status-dot--run deg-pulse" />}
-                  {drafting ? 'Chọn model rồi gõ câu hỏi đầu tiên' : CONV_STATUS_LABEL[convStatus]}
+                  {drafting
+                    ? isCustomer
+                      ? 'Mô tả nhu cầu vay để bắt đầu'
+                      : 'Nhập nội dung cần thẩm định'
+                    : CONV_STATUS_LABEL[convStatus]}
                 </div>
               </div>
 
@@ -395,8 +423,8 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
               <div className="ws__messages" ref={scrollRef} data-scroll>
                 {!hasContent && (
                   <div className="ws__hint">
-                    Gõ một yêu cầu tư vấn (VD: “Khách C001 xin vay — DSCR bao nhiêu?”).
-                    Main sẽ điều phối đội chuyên gia và trả lời có nguồn.
+                    Nhập yêu cầu thẩm định, ví dụ: “Khách hàng C001 đề nghị vay 500 triệu”.
+                    Hệ thống sẽ tổng hợp kết quả cùng nguồn thông tin tham chiếu.
                   </div>
                 )}
                 {messages.map((m) => (
@@ -404,12 +432,14 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
                 ))}
                 {streaming && <StreamingMessageBubble bubble={streaming} />}
 
-                {/* khối trace F1 (thinking + toolcall collapsible) — D-43 user track */}
-                <TraceBlock items={trace} taskRole={(id) => tasks.find((t) => t.id === id)?.role} />
+                {/* Trace/tool là mặt vận hành nội bộ; không lộ chain/tool detail ra cửa khách. */}
+                {!isCustomer && (
+                  <TraceBlock items={trace} taskRole={(id) => tasks.find((t) => t.id === id)?.role} />
+                )}
 
                 {tasks.length > 0 && (
-                  <div className="ws__tasks" aria-label="Đội đang làm việc">
-                    <span className="ws__tasks-label">ĐỘI ĐANG LÀM VIỆC</span>
+                  <div className="ws__tasks" aria-label="Tiến độ phối hợp xử lý">
+                    <span className="ws__tasks-label">{isCustomer ? 'TIẾN ĐỘ HỒ SƠ' : 'BỘ PHẬN PHỐI HỢP'}</span>
                     <div className="ws__tasks-row">
                       {tasks.map((t) => (
                         <TaskBadge key={t.id} task={t} />
@@ -431,17 +461,25 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
               </div>
 
               <Composer
-                placeholder={drafting ? 'Gõ câu hỏi đầu tiên — ca sẽ tạo với model đã chọn…' : 'Hỏi Main về ca này…'}
+                placeholder={
+                  drafting
+                    ? isCustomer
+                      ? 'Mô tả nhu cầu vay và thông tin cần bổ sung…'
+                      : 'Nhập nội dung cần thẩm định…'
+                    : isCustomer
+                      ? 'Bổ sung thông tin cho hồ sơ…'
+                      : 'Trao đổi thêm về hồ sơ…'
+                }
                 onSend={sendChat}
-                disabled={busy || creating}
-                extras={
+                disabled={creating}
+                extras={!isCustomer ? (
                   <ModelPicker
                     provider={pickProvider}
                     model={pickModel}
                     disabled={creating || hasContent}
                     onChange={(p, m) => { setPickProvider(p); setPickModel(m); }}
                   />
-                }
+                ) : undefined}
               />
             </>
           )}
@@ -456,7 +494,14 @@ export function Workspace({ user, onAuthExpired, onOpenTower }: Props) {
             onBack={() => setFocusSub(null)}
           />
         ) : (
-          <Canvas cards={cards} tasks={tasks} onDecide={handleDecide} canDecide={user.role === 'admin'} onSelectSub={setFocusSub} />
+          <Canvas
+            cards={cards}
+            tasks={tasks}
+            onDecide={handleDecide}
+            canDecide={user.role === 'admin'}
+            onSelectSub={isCustomer ? undefined : setFocusSub}
+            showLobby={!isCustomer}
+          />
         )}
       </div>
     </div>
@@ -500,15 +545,16 @@ function auditToTrace(row: AuditRow): TraceItem {
 }
 
 function describeError(err: unknown, fallback: string): string {
-  if (err instanceof ApiRequestError) {
-    return err.body?.message ?? `${fallback} (HTTP ${err.status})`;
+  if (err instanceof ApiRequestError && err.status === 403) {
+    return 'Bạn không có quyền thực hiện thao tác này.';
   }
-  if (err instanceof Error && err.message) return `${fallback}: ${err.message}`;
   return fallback;
 }
 
 // lý do lỗi từ task.result.reason (CONTRACT §4b Gap2 A — result là dict tự do, đọc an toàn).
 function taskReason(task: OrchTask): string | null {
   const reason = task.result?.reason;
-  return typeof reason === 'string' && reason.trim() ? reason : null;
+  return typeof reason === 'string' && reason.trim()
+    ? 'Nội dung chưa hoàn tất. Vui lòng kiểm tra thông tin hồ sơ hoặc thử lại.'
+    : null;
 }

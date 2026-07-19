@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.auth.deps import can_access_conv, require_user
+from app.auth.deps import can_access_conv
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.orch import room, store
 
@@ -31,7 +32,9 @@ class ChatBody(BaseModel):
 
 
 @router.post("")
-async def create_conversation(body: CreateConvBody, claims: dict = Depends(require_user)) -> JSONResponse:
+async def create_conversation(
+    body: CreateConvBody, claims: dict = Depends(require_permission("cases.create"))
+) -> JSONResponse:
     """Tạo ca → Conversation (201). user_id từ JWT claims. provider/model optional (D-45b c)."""
     # validate provider nếu truyền — fail LOUD (4-field) thay vì lưu provider sai → hang lúc chạy.
     if body.provider:
@@ -45,20 +48,29 @@ async def create_conversation(body: CreateConvBody, claims: dict = Depends(requi
                 "Xem GET /api/models để lấy tên provider hợp lệ.",
                 retryable=False,
             )
-    conv = await store.create_conversation(claims["username"], body.title, body.provider, body.model)
+    conv = await store.create_conversation(
+        claims["username"],
+        body.title,
+        body.provider,
+        body.model,
+        tenant_id=claims["tenant_id"],
+    )
     return JSONResponse(status_code=201, content=conv)
 
 
 @router.get("")
-async def list_conversations(claims: dict = Depends(require_user)) -> list[dict[str, Any]]:
-    """List ca (200). D-56 scoping: admin (ngân hàng) → TẤT CẢ ca; customer/user → CHỈ ca mình."""
-    if claims.get("role") == "admin":
-        return await store.list_all_conversations()
-    return await store.list_conversations(claims["username"])
+async def list_conversations(
+    claims: dict = Depends(require_permission("cases.read")),
+) -> list[dict[str, Any]]:
+    """Internal users see their regional tenant; legacy customers remain owner-only."""
+    owner = claims["username"] if claims.get("role") == "customer" else None
+    return await store.list_tenant_conversations(claims["tenant_id"], owner_username=owner)
 
 
 @router.get("/{conv_id}")
-async def get_conversation(conv_id: str, claims: dict = Depends(require_user)) -> dict[str, Any]:
+async def get_conversation(
+    conv_id: str, claims: dict = Depends(require_permission("cases.read"))
+) -> dict[str, Any]:
     """Full state (CONTRACT §3). D-56: ca người khác → 404 (hide existence, KHÔNG 403)."""
     conv = await store.get_conversation(conv_id)
     if conv is None or not can_access_conv(conv, claims):
@@ -70,7 +82,12 @@ async def get_conversation(conv_id: str, claims: dict = Depends(require_user)) -
 
 
 @router.post("/{conv_id}/chat")
-async def chat(conv_id: str, body: ChatBody, request: Request, claims: dict = Depends(require_user)) -> JSONResponse:
+async def chat(
+    conv_id: str,
+    body: ChatBody,
+    request: Request,
+    claims: dict = Depends(require_permission("cases.review")),
+) -> JSONResponse:
     """Đẩy user_message vào phòng (spine) → 202 NGAY (main stream qua SSE, KHÔNG chờ).
 
     Main bận → handle_room_event tự xếp queue (T1-2). Lưu message user TRƯỚC, rồi spawn lượt.

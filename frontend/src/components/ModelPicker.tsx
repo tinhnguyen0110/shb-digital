@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { conversationApi } from '../api';
 import type { Provider } from '../types';
+import { modelLabel, providerLabel } from '../uiCopy';
 import './ModelPicker.css';
 
 interface Props {
@@ -36,14 +37,14 @@ export function ModelPicker({ provider, model, onChange, disabled }: Props) {
         }
       })
       .catch(() => {
-        if (alive) setError('Không tải được danh sách model — ca sẽ dùng model mặc định của máy chủ.');
+        if (alive) setError('Chưa tải được cấu hình xử lý. Hệ thống sẽ áp dụng cấu hình mặc định.');
       });
     return () => { alive = false; };
     // chạy 1 lần lúc mount — provider/model/onChange KHÔNG vào deps để tránh refetch vòng lặp.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (error) return <div className="mp__note" title={error}>⚙ model: mặc định máy chủ</div>;
+  if (error) return <div className="mp__note" title={error}>Áp dụng cấu hình xử lý mặc định</div>;
   if (providers.length === 0) return null; // chưa tải xong / rỗng → không chiếm chỗ
 
   const current = providers.find((p) => p.name === provider);
@@ -52,12 +53,12 @@ export function ModelPicker({ provider, model, onChange, disabled }: Props) {
   return (
     <div className="mp">
       <label className="mp__row">
-        <span className="mp__label">Provider</span>
+        <span className="mp__label">Phương án xử lý</span>
         <select
           className="mp__select"
           value={provider}
           disabled={disabled}
-          aria-label="Chọn provider"
+          aria-label="Chọn phương án xử lý"
           onChange={(e) => {
             const next = providers.find((p) => p.name === e.target.value);
             onChange(e.target.value, next?.models?.[0] ?? '');
@@ -65,23 +66,23 @@ export function ModelPicker({ provider, model, onChange, disabled }: Props) {
         >
           {providers.map((p) => (
             <option key={p.name} value={p.name} disabled={!p.has_key}>
-              {p.name}{p.has_key ? '' : ' (thiếu key)'}{p.default ? ' ★' : ''}
+              {providerLabel(p.name)}{p.has_key ? '' : ' (chưa sẵn sàng)'}{p.default ? ' · Mặc định' : ''}
             </option>
           ))}
         </select>
       </label>
       {models.length > 0 && (
         <label className="mp__row">
-          <span className="mp__label">Model</span>
+          <span className="mp__label">Mức độ hỗ trợ</span>
           <select
             className="mp__select"
             value={model}
             disabled={disabled}
-            aria-label="Chọn model"
+            aria-label="Chọn mức độ hỗ trợ"
             onChange={(e) => onChange(provider, e.target.value)}
           >
             {models.map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>{modelLabel(m)}</option>
             ))}
           </select>
         </label>

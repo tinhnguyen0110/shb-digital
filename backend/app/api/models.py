@@ -10,14 +10,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from app.auth.deps import require_user
+from app.auth.permissions import require_permission
 from app.orch.providers import providers
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
 @router.get("")
-async def list_models(claims: dict = Depends(require_user)) -> dict[str, Any]:
+async def list_models(claims: dict = Depends(require_permission("products.read"))) -> dict[str, Any]:
     """Provider + model cho FE dropdown. reload() bắt .env mới (điền key runtime → has_key đổi).
 
     Trả {providers: [...], default: <name>}. KHÔNG key (public_view). default = provider mặc định

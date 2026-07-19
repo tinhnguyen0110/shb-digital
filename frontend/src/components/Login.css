@@ -19,6 +19,25 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
+.login__back {
+  align-self: flex-start;
+  margin: -4px 0 2px;
+  padding: 5px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  color: var(--mute);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login__back:hover {
+  color: var(--acc);
+}
+
 .login__brand {
   display: flex;
   align-items: center;

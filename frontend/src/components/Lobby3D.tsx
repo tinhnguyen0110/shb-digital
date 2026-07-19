@@ -20,7 +20,13 @@ const C = {
 };
 const ROLE: Record<string, number> = { planner: 0x2b3a8c, credit: 0x3fae6a, legal: 0xe0a13a, products: 0x38a3c4, ops: 0xf26a21 };
 const STC: Record<string, number> = { idle: 0xb9c0cc, run: 0x2f8fd6, done: 0x46a05e, warn: 0xe0a13a, err: 0xe0705f };
-const NAME: Record<string, string> = { planner: 'Main', credit: 'Tín dụng', legal: 'Pháp chế', products: 'Sản phẩm', ops: 'Vận hành' };
+const NAME: Record<string, string> = {
+  planner: 'Điều phối',
+  credit: 'Tín dụng',
+  legal: 'Pháp lý',
+  products: 'Sản phẩm',
+  ops: 'Vận hành',
+};
 const NUM: Record<string, number> = { planner: 0, credit: 1, legal: 2, products: 3, ops: 4 };
 const POS: Record<string, [number, number, number]> = {
   planner: [0, 0, -0.2], credit: [-4.5, 0, 0.9], legal: [-2.3, 0, 0.2], products: [2.3, 0, 0.2], ops: [4.5, 0, 0.9],

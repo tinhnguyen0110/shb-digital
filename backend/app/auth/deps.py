@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Request
 
+from app.auth.permissions import DEFAULT_ROLE_PERMISSIONS, DEFAULT_TENANT_ID, load_principal
 from app.auth.security import decode_token
 from app.config import AUTH_COOKIE, DEV_ADMIN_CLAIMS, DEV_SKIP_AUTH
 from app.errors import ApiError
@@ -47,14 +48,15 @@ def _claims_from_request(request: Request) -> dict[str, Any]:
     # DEV_SKIP_AUTH (D-39): flag ON → admin THẲNG, bỏ cookie/JWT. Skip thắng cả khi có cookie thật
     # (dev tiện — defensive case). 1 CHỖ duy nhất (không rải if-flag khắp routes).
     if DEV_SKIP_AUTH:
-        return _dev_admin_claims()
-    token = request.cookies.get(AUTH_COOKIE)
-    # fallback: Bearer header (REST client/test tiện) — EventSource vẫn dùng cookie
-    if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
-    claims = decode_token(token) if token else None
+        claims = _dev_admin_claims()
+    else:
+        token = request.cookies.get(AUTH_COOKIE)
+        # fallback: Bearer header (REST client/test tiện) — EventSource vẫn dùng cookie
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                token = auth[7:]
+        claims = decode_token(token) if token else None
     if claims is None:
         raise ApiError(
             status_code=401,
@@ -63,7 +65,37 @@ def _claims_from_request(request: Request) -> dict[str, Any]:
             hint="Đăng nhập lại qua POST /api/auth/login.",
             retryable=False,
         )
-    return claims
+    try:
+        principal = load_principal(str(claims.get("sub") or ""))
+    except Exception:  # noqa: BLE001 — bypass dev phải boot được khi PostgreSQL chưa sẵn
+        if not DEV_SKIP_AUTH:
+            raise
+        log.warning("DEV_SKIP_AUTH: không tải được principal từ DB; dùng admin Miền Bắc cố định")
+        principal = None
+    if principal is None and DEV_SKIP_AUTH:
+        # DB may be unavailable during local boot; keep the bypass explicitly tenant-bound.
+        principal = {
+            **claims,
+            "owner_id": None,
+            "tenant_id": DEFAULT_TENANT_ID,
+            "tenant": DEFAULT_TENANT_ID,
+            "region": "north",
+            "tenant_name": "SHB Bán lẻ · Miền Bắc",
+            "display_name": "Quản lý demo",
+            "name": "Quản lý demo",
+            "active": True,
+            "is_active": True,
+            "permissions": list(DEFAULT_ROLE_PERMISSIONS["admin"]),
+        }
+    if principal is None:
+        raise ApiError(
+            status_code=401,
+            code="unauthorized",
+            message="Tài khoản không tồn tại, đã bị khóa hoặc tenant ngừng hoạt động.",
+            hint="Đăng nhập lại hoặc liên hệ quản trị tenant.",
+            retryable=False,
+        )
+    return {**claims, **principal}
 
 
 def require_user(request: Request) -> dict[str, Any]:
@@ -72,9 +104,9 @@ def require_user(request: Request) -> dict[str, Any]:
 
 
 def require_admin(request: Request) -> dict[str, Any]:
-    """Chỉ admin (quản lý/compliance — D-19). Dùng cho approvals/audit endpoints (S4)."""
+    """Compatibility dependency: tenant admin with case-approval permission."""
     claims = _claims_from_request(request)
-    if claims.get("role") != "admin":
+    if "cases.approve" not in set(claims.get("permissions") or []):
         raise ApiError(
             status_code=403,
             code="forbidden",
@@ -86,7 +118,7 @@ def require_admin(request: Request) -> dict[str, Any]:
 
 
 def can_access_conv(conv: dict[str, Any], claims: dict[str, Any]) -> bool:
-    """D-56 scoping: admin (ngân hàng) → mọi ca; khác → CHỈ ca của mình (conv.user_id == username).
-    Ca không thuộc mình → caller trả 404 (hide existence, KHÔNG 403 — không lộ ca người khác tồn tại).
-    Dùng chung: conversations (get/chat) · SSE · interrupt."""
-    return claims.get("role") == "admin" or conv.get("user_id") == claims.get("username")
+    """Tenant is mandatory; legacy customer accounts remain owner-only."""
+    if not claims.get("tenant_id") or conv.get("tenant_id") != claims.get("tenant_id"):
+        return False
+    return claims.get("role") != "customer" or conv.get("user_id") == claims.get("username")

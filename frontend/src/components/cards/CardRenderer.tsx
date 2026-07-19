@@ -19,7 +19,7 @@ export function CardRenderer({ card, onCite, onDecide, canDecide }: { card: Card
     <div className={`card${wide ? ' card--wide' : ''}`} id={`card-${card.id}`} data-testid={`card-${card.type}`}>
       <div className="card__head">
         <span className="card__title">{card.title ?? cardTypeLabel(card.type)}</span>
-        <span className="card__type">{card.type}</span>
+        <span className="card__type">{cardTypeLabel(card.type)}</span>
       </div>
       <div className="card__body">
         <CardBody card={card} onCite={onCite} onDecide={onDecide} canDecide={canDecide} />

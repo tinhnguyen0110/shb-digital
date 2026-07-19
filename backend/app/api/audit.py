@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.deps import require_admin
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.orch import store_audit
 
@@ -24,7 +24,7 @@ async def list_audit(
     tool: str | None = Query(None),
     actor: str | None = Query(None),
     limit: int = Query(200, ge=1, le=1000),
-    claims: dict = Depends(require_admin),
+    claims: dict = Depends(require_permission("monitoring.read")),
 ) -> list[dict[str, Any]]:
     """tool_calls theo filter (admin — D-56 ngân hàng giám sát). Mới nhất trước. Ít nhất 1 filter
     khuyến nghị nhưng không bắt (audit toàn cục cũng hợp lệ cho Control Tower). limit cap 1000."""
@@ -32,7 +32,7 @@ async def list_audit(
     # bỏ None → chỉ filter cột được truyền
     active = {k: v for k, v in filters.items() if v}
     try:
-        return await store_audit.query_tool_calls(active, limit=limit)
+        return await store_audit.query_tool_calls(active, limit=limit, tenant_id=claims["tenant_id"])
     except Exception as e:  # noqa: BLE001 — id sai format uuid (task_id) → 400 giọng-agent
         raise ApiError(
             400,

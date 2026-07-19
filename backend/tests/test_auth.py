@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth.security import decode_token, hash_password, verify_password
 from app.config import AUTH_COOKIE
 from app.db.config import DATABASE_URL
+from app.db.seed_users import SEED_ACCOUNTS
 from app.main import app
 
 from .conftest import requires_db
@@ -31,6 +32,13 @@ def _users_seeded() -> bool:
 
 
 # ── security primitives (không cần DB) ──────────────────────────────────────
+
+
+def test_seed_accounts_include_staff_and_keep_legacy_user():
+    accounts = {username: (role, owner_id) for username, _password, role, owner_id in SEED_ACCOUNTS}
+    assert accounts["staff"] == ("user", None)
+    assert accounts["user"] == ("user", None)
+    assert accounts["admin"] == ("admin", None)
 
 
 def test_hash_verify_roundtrip():
@@ -57,7 +65,31 @@ def test_decode_bad_token():
     assert decode_token("garbage.token.here") is None
 
 
+def test_logout_clears_auth_cookie_without_requiring_a_valid_session():
+    r = client.post("/api/auth/logout", cookies={AUTH_COOKIE: "expired-or-invalid"})
+    assert r.status_code == 204
+    assert r.content == b""
+    assert AUTH_COOKIE in r.headers["set-cookie"]
+    assert "Max-Age=0" in r.headers["set-cookie"]
+
+
 # ── login endpoint (cần DB seed) ────────────────────────────────────────────
+
+
+@requires_db
+def test_login_success_staff():
+    if not _users_seeded():
+        import pytest
+
+        pytest.skip("users chưa seed — uv run python -m app.db.seed_users")
+    r = client.post("/api/auth/login", json={"username": "staff", "password": "staff"})
+    assert r.status_code == 200
+    user = r.json()["user"]
+    assert user["username"] == "staff"
+    assert user["role"] == "user"
+    assert user["tenant_id"] == "shb-north"
+    assert user["region"] == "north"
+    assert "cases.read" in user["permissions"]
 
 
 @requires_db

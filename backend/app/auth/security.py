@@ -27,13 +27,22 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def make_token(*, user_id: str, username: str, role: str) -> str:
-    """JWT HS256: sub=user_id, kèm username+role, exp theo TTL."""
+def make_token(
+    *,
+    user_id: str,
+    username: str,
+    role: str,
+    tenant_id: str | None = None,
+    region: str | None = None,
+) -> str:
+    """JWT HS256: identity hints are additive; authorization is reloaded from DB per request."""
     now = dt.datetime.now(dt.UTC)
     payload = {
         "sub": user_id,
         "username": username,
         "role": role,
+        "tenant_id": tenant_id,
+        "region": region,
         "iat": now,
         "exp": now + dt.timedelta(seconds=JWT_TTL_SECONDS),
     }

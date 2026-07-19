@@ -1,8 +1,8 @@
-// api/mock.ts — mock server-shape đúng contract T1-3 Exports, TẮT ĐƯỢC bằng env
-// VITE_USE_MOCK_API=false (mặc định true khi backend chưa sẵn — mọi báo cáo khai trạng thái cờ).
+// api/mock.ts — mock server-shape đúng contract T1-3 Exports, chỉ bật khi
+// VITE_USE_MOCK_API=true (`npm run dev` và Vitest dùng mock; production gọi backend thật).
 // Mô phỏng: tạo ca → gõ câu hỏi chứa "C001"/"DSCR" → main "dispatch" task credit → task done
 // kèm DSCR=3.709 có nguồn → main stream câu trả lời tổng hợp qua chat.delta.
-// Đây LÀ đường dây thay cho backend thật — swap: đổi VITE_USE_MOCK_API=false, không đụng UI.
+// Đây LÀ đường dây thay cho backend thật — swap bằng cờ env, không đụng UI.
 
 import type {
   ApprovalRow,
@@ -63,18 +63,27 @@ class MockBackend {
     for (const listener of r.listeners) listener(ev);
   }
 
-  listConversations(): Conversation[] {
-    return [...this.rooms.values()].map((r) => r.conversation).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  listConversations(tenantId?: Conversation['tenant_id']): Conversation[] {
+    return [...this.rooms.values()]
+      .map((r) => r.conversation)
+      .filter((conversation) => !tenantId || conversation.tenant_id === tenantId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
   // provider/model optional (D-45b c) — mock chấp nhận để khớp signature thật; lưu để phản ánh nếu cần.
-  createConversation(title: string, provider?: string, model?: string): Conversation {
+  createConversation(
+    title: string,
+    provider?: string,
+    model?: string,
+    tenantId?: Conversation['tenant_id'],
+  ): Conversation {
     const id = uid('c');
     const conv: Conversation = {
       id,
       title: title || `Ca ${this.rooms.size + 1}`,
       status: 'idle',
       created_at: nowIso(),
+      ...(tenantId ? { tenant_id: tenantId } : {}),
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
     };
@@ -104,10 +113,11 @@ class MockBackend {
   }
 
   // ── Control Tower (T4-6) — mock data giả đúng shape ──
-  async listApprovals(status: string): Promise<ApprovalRow[]> {
+  async listApprovals(status: string, tenantId?: Conversation['tenant_id']): Promise<ApprovalRow[]> {
     // gom phiếu approval từ mọi room (card type=approval) → row queue.
     const out: ApprovalRow[] = [];
     for (const r of this.rooms.values()) {
+      if (tenantId && r.conversation.tenant_id !== tenantId) continue;
       for (const c of r.cards) {
         if (c.type === 'approval' && (status === 'all' || c.status === status)) {
           out.push({
@@ -121,7 +131,12 @@ class MockBackend {
     return out;
   }
 
-  async auditFiltered(filters: Record<string, string>): Promise<AuditRow[]> {
+  async auditFiltered(
+    filters: Record<string, string>,
+    tenantId?: Conversation['tenant_id'],
+  ): Promise<AuditRow[]> {
+    const convId = filters.conv_id;
+    if (tenantId && convId && this.rooms.get(convId)?.conversation.tenant_id !== tenantId) return [];
     if (filters.conv_id) return this.auditByConv(filters.conv_id);
     if (filters.task_id) return this.auditByTask(filters.task_id);
     return [];
@@ -140,8 +155,8 @@ class MockBackend {
   async runCompare(question: string): Promise<CompareResult> {
     await delay(MOCK_LATENCY_MS * 3);
     return {
-      single: { text: `[Single-agent] Trả lời trực tiếp cho: ${question}. DSCR ước ~0.24, không đủ điều kiện.`, duration_s: 4.2, tool_calls: 0, cards: 0, conv_id: null },
-      multi: { text: `[Multi-agent] Đội thẩm định: DSCR 0.236 (credit_assess), CIC nhóm 1, khuyến nghị vay nhỏ hơn — có nguồn từng số.`, duration_s: 38.5, tool_calls: 4, cards: 2, conv_id: uid('c') },
+      single: { text: `Kết quả tham khảo cho yêu cầu: ${question}. DSCR ước tính 0,24; chưa đáp ứng ngưỡng xem xét.`, duration_s: 4.2, tool_calls: 0, cards: 0, conv_id: null },
+      multi: { text: 'Kết quả phối hợp chuyên môn: DSCR 0,236, CIC nhóm 1; đề xuất xem xét giảm số tiền vay. Các chỉ số đều kèm nguồn tham chiếu.', duration_s: 38.5, tool_calls: 4, cards: 2, conv_id: uid('c') },
     };
   }
 
@@ -267,7 +282,7 @@ class MockBackend {
       // FE lấy qua full-state refetch (App refetch khi status→failed). Bản thật: BE INSERT messages.
       r.messages.push({
         id: uid('m'), conv_id: convId, ts: nowIso(), sender: 'system',
-        content: '⚠ Lượt xử lý gặp lỗi: MAIN hết trần retry khi điều phối. Vui lòng thử lại — nếu lặp lại, báo quản trị.',
+        content: 'Quá trình xử lý chưa hoàn tất. Vui lòng thử lại; nếu tình trạng tiếp diễn, liên hệ bộ phận hỗ trợ.',
         meta: { error: true },
       });
       r.conversation.status = 'failed';
@@ -307,13 +322,13 @@ class MockBackend {
       await delay(MOCK_LATENCY_MS * 2);
       task = {
         ...task, status: 'failed',
-        result: { reason: 'Sub Tín dụng timeout sau 120s — không lấy được hồ sơ CIC của C001 (nguồn cic_records không phản hồi).' },
+        result: { reason: 'Chưa thu thập đủ thông tin tín dụng của khách hàng C001 trong thời gian cho phép.' },
         ended_at: nowIso(), cost: { tool_calls: 0 },
       };
       r.tasks = r.tasks.map((t) => (t.id === task!.id ? task! : t));
       this.emit(convId, envelope(convId, 'task.status', { task }));
 
-      const answer = ' Rất tiếc, phần Tín dụng gặp sự cố nên em chưa thể đưa kết luận cho ca này. Chi tiết lỗi hiển thị ở thẻ công việc bên cạnh.';
+      const answer = ' Hiện chưa thể hoàn tất phần thẩm định tín dụng. Vui lòng kiểm tra nội dung cần bổ sung trong khu vực tiến độ xử lý.';
       await this.streamText(convId, turnId, seq, answer, true);
       r.conversation.status = 'failed';
       this.emit(convId, envelope(convId, 'conversation.status', { status: 'failed' }));
@@ -342,21 +357,21 @@ class MockBackend {
       await delay(MOCK_LATENCY_MS);
       // main present thêm options + timeline + document để canvas đủ nhiều loại (mock demo canvas)
       this.presentCard(convId, null, 'options', 'Gói vay phù hợp', [
-        { name: 'Vay tiêu dùng 700tr', rate: '13.5%/năm', tenor: '60 tháng', source: 'products_catalog' },
-        { name: 'Vay thế chấp 5 tỷ', rate: '9.2%/năm', tenor: '120 tháng', source: 'products_catalog' },
-      ], { recommended: 'Vay thế chấp 5 tỷ' });
+        { name: 'Vay tiêu dùng không tài sản bảo đảm', tenor: 'Theo điều kiện hiện hành', source: 'products_catalog' },
+        { name: 'Vay thấu chi online tín chấp', tenor: 'Hạn mức 12 tháng', source: 'products_catalog' },
+      ], { recommended: 'Vay tiêu dùng không tài sản bảo đảm' });
       this.presentCard(convId, null, 'timeline', 'Lộ trình xử lý', [
         { step: 'Thẩm định tín dụng', owner: 'Tín dụng', eta: 'xong' },
-        { step: 'Bổ sung tài sản đảm bảo', owner: 'RM', eta: '2 ngày' },
-        { step: 'Trình duyệt + giải ngân', owner: 'Vận hành', eta: '3 ngày' },
+        { step: 'Kiểm tra hồ sơ thu nhập', owner: 'Nhân viên phụ trách', eta: '2 ngày' },
+        { step: 'Thông báo kết quả', owner: 'Vận hành', eta: '3 ngày' },
       ], { total_days: 5 });
 
       const answer =
-        ` Đã có kết quả từ Tín dụng: DSCR = ${dscr.toFixed(3)} (thu nhập 30tr/tháng, nợ hiện tại 8tr/tháng — nguồn: credit_assess). ` +
-        'Bảng chỉ số + gói vay + lộ trình đã trình bên canvas. Cần đối chiếu thêm CIC trước khi kết luận.';
+        ` Đã có kết quả thẩm định tín dụng: DSCR = ${dscr.toFixed(3)} (thu nhập 30 triệu đồng/tháng, nghĩa vụ nợ hiện tại 8 triệu đồng/tháng). ` +
+        'Bảng chỉ số, phương án vay và lộ trình đã được cập nhật trong khu vực kết quả. Cần đối chiếu thêm thông tin CIC trước khi kết luận.';
       await this.streamText(convId, turnId, seq, answer, true);
     } else {
-      await this.streamText(convId, turnId, seq, ' (mock không nhận diện yêu cầu cần tra tín dụng — gõ câu có "C001" hoặc "DSCR" để xem luồng đầy đủ)', true);
+      await this.streamText(convId, turnId, seq, ' Nội dung đã được ghi nhận. Vui lòng bổ sung mã khách hàng hoặc yêu cầu thẩm định cụ thể để tiếp tục.', true);
     }
 
     r.conversation.status = 'done';

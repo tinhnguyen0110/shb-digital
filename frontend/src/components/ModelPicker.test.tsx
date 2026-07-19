@@ -29,30 +29,30 @@ describe('ModelPicker', () => {
 
   it('render 2 select provider + model khi đã chọn provider', async () => {
     render(<ModelPicker provider="claude-cli" model="sonnet" onChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Chọn provider')).toBeInTheDocument());
-    expect(screen.getByLabelText('Chọn model')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Chọn phương án xử lý')).toBeInTheDocument());
+    expect(screen.getByLabelText('Chọn mức độ hỗ trợ')).toBeInTheDocument();
     // model đang chọn = sonnet
-    expect((screen.getByLabelText('Chọn model') as HTMLSelectElement).value).toBe('sonnet');
+    expect((screen.getByLabelText('Chọn mức độ hỗ trợ') as HTMLSelectElement).value).toBe('sonnet');
   });
 
   it('provider has_key=false → option disabled (không chọn được)', async () => {
     render(<ModelPicker provider="claude-cli" model="haiku" onChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Chọn provider')).toBeInTheDocument());
-    const opt = screen.getByRole('option', { name: /openai \(thiếu key\)/ }) as HTMLOptionElement;
+    await waitFor(() => expect(screen.getByLabelText('Chọn phương án xử lý')).toBeInTheDocument());
+    const opt = screen.getByRole('option', { name: /Phương án mở rộng \(chưa sẵn sàng\)/ }) as HTMLOptionElement;
     expect(opt.disabled).toBe(true);
   });
 
   it('đổi provider → onChange với model đầu của provider mới', async () => {
     const onChange = vi.fn();
     render(<ModelPicker provider="claude-cli" model="haiku" onChange={onChange} />);
-    await waitFor(() => expect(screen.getByLabelText('Chọn provider')).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText('Chọn provider'), { target: { value: 'zai' } });
+    await waitFor(() => expect(screen.getByLabelText('Chọn phương án xử lý')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Chọn phương án xử lý'), { target: { value: 'zai' } });
     expect(onChange).toHaveBeenCalledWith('zai', 'glm-4.6');
   });
 
-  it('getModels lỗi → note "mặc định máy chủ", không crash', async () => {
+  it('getModels lỗi → note cấu hình mặc định, không crash', async () => {
     vi.spyOn(conversationApi, 'getModels').mockRejectedValue(new Error('down'));
     render(<ModelPicker provider="" model="" onChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText(/mặc định máy chủ/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/cấu hình xử lý mặc định/)).toBeInTheDocument());
   });
 });

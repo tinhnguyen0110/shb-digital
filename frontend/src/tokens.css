@@ -6,31 +6,45 @@
  */
 
 :root {
-  /* nền */
-  --bg: #1a1917;
-  --bg2: #161514;
-  --p1: #211f1d;
-  --p2: #2a2825;
-  --p3: #332f2b;
+  color-scheme: light;
 
-  /* viền */
-  --bd: #37332f;
-  --bd2: #48423b;
+  /* Light — cùng chất liệu portal SHB, dùng chung cho Portal và Agent HUD. */
+  --bg: #fff8f6;
+  --bg2: #f8fafc;
+  --p1: #ffffff;
+  --p2: #fff1eb;
+  --p3: #f5ded4;
 
-  /* chữ */
-  --tx: #f2efe8;
-  --dim: #b0a99d;
-  --mute: #7d766a;
-  --faint: #544e45;
+  --bd: #ead8d0;
+  --bd2: #d7bbb0;
 
-  /* accent + tone */
-  --acc: #d97757;
-  --acc-bg: rgba(217, 119, 87, 0.16);
-  --run: #5fb2c9;
-  --pass: #82b878;
-  --fail: #e0705f;
-  --warn: #dda94a;
-  --main: #b98cd9;
+  --tx: #251913;
+  --dim: #584237;
+  --mute: #725f56;
+  --faint: #6f5c53;
+
+  --acc: #a04100;
+  --acc-hover: #7a3000;
+  --acc-strong: #f37021;
+  --acc-bg: rgba(160, 65, 0, 0.1);
+  --on-acc: #ffffff;
+  --run: #006492;
+  --pass: #16834b;
+  --fail: #ba1a1a;
+  --warn: #9a5c00;
+  --main: #4f5e83;
+  --focus-ring: rgba(160, 65, 0, 0.28);
+  --shadow-soft: 0 8px 24px rgba(63, 41, 30, 0.08);
+
+  /* Portal semantic surfaces. */
+  --portal-bg: #f8fafc;
+  --portal-surface: #ffffff;
+  --portal-sidebar: #fff8f6;
+  --portal-hero: #f37021;
+  --portal-hero-fg: #3d1600;
+  --portal-blue: #006492;
+  --portal-blue-bg: #e4f3fb;
+  --portal-scrim: rgba(37, 25, 19, 0.42);
 
   /* tone → [chữ, nền dim, viền] — mirror T.tone */
   --tone-idle-fg: var(--faint);
@@ -38,28 +52,68 @@
   --tone-idle-bd: var(--bd);
 
   --tone-run-fg: var(--run);
-  --tone-run-bg: rgba(95, 178, 201, 0.12);
-  --tone-run-bd: rgba(95, 178, 201, 0.5);
+  --tone-run-bg: rgba(0, 100, 146, 0.1);
+  --tone-run-bd: rgba(0, 100, 146, 0.35);
 
   --tone-pass-fg: var(--pass);
-  --tone-pass-bg: rgba(130, 184, 120, 0.1);
-  --tone-pass-bd: rgba(130, 184, 120, 0.4);
+  --tone-pass-bg: rgba(22, 131, 75, 0.1);
+  --tone-pass-bd: rgba(22, 131, 75, 0.35);
 
   --tone-warn-fg: var(--warn);
-  --tone-warn-bg: rgba(221, 169, 74, 0.1);
-  --tone-warn-bd: rgba(221, 169, 74, 0.4);
+  --tone-warn-bg: rgba(154, 92, 0, 0.1);
+  --tone-warn-bd: rgba(154, 92, 0, 0.35);
 
   --tone-fail-fg: var(--fail);
-  --tone-fail-bg: rgba(224, 112, 95, 0.1);
-  --tone-fail-bd: rgba(224, 112, 95, 0.4);
+  --tone-fail-bg: rgba(186, 26, 26, 0.08);
+  --tone-fail-bd: rgba(186, 26, 26, 0.3);
 
   --tone-main-fg: var(--main);
-  --tone-main-bg: rgba(185, 140, 217, 0.15);
-  --tone-main-bd: rgba(185, 140, 217, 0.4);
+  --tone-main-bg: rgba(79, 94, 131, 0.12);
+  --tone-main-bd: rgba(79, 94, 131, 0.35);
 
   /* font */
   --font: 'Be Vietnam Pro', system-ui, sans-serif;
   --mono: ui-monospace, Menlo, monospace;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0a0d12;
+  --bg2: #07090d;
+  --p1: #11161e;
+  --p2: #171d27;
+  --p3: #202733;
+
+  --bd: #252d39;
+  --bd2: #384454;
+
+  --tx: #f3f0eb;
+  --dim: #c1b9af;
+  --mute: #918980;
+  --faint: #8f8982;
+
+  --acc: #ff9b68;
+  --acc-hover: #ffb693;
+  --acc-strong: #f37021;
+  --acc-bg: rgba(255, 155, 104, 0.13);
+  --on-acc: #341000;
+  --run: #75c8f2;
+  --pass: #75d59a;
+  --fail: #ffb4ab;
+  --warn: #f3bd67;
+  --main: #b7c6f1;
+  --focus-ring: rgba(255, 155, 104, 0.35);
+  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.3);
+
+  --portal-bg: #080b10;
+  --portal-surface: #11161e;
+  --portal-sidebar: #0d1118;
+  --portal-hero: #a84a17;
+  --portal-hero-fg: #fff4ee;
+  --portal-blue: #75c8f2;
+  --portal-blue-bg: rgba(117, 200, 242, 0.1);
+  --portal-scrim: rgba(0, 0, 0, 0.62);
 }
 
 * {
@@ -78,6 +132,15 @@ body {
   color: var(--tx);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
+}
+
+.app-view-loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--mute);
+  background: var(--bg);
+  font-size: 12px;
 }
 
 button,
@@ -129,11 +192,16 @@ textarea {
   border: none;
   display: inline-block;
 }
-.btn--primary { background: var(--acc); color: var(--bg); }
+.btn--primary { background: var(--acc); color: var(--on-acc); }
 .btn--ghost { background: none; color: var(--dim); border: 1px solid var(--bd2); }
 .btn--danger { background: none; color: var(--fail); border: 1px solid rgba(224, 112, 95, 0.4); }
 .btn--ok { background: var(--pass); color: var(--bg); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 
 @keyframes deg-fadein {
   from { opacity: 0; transform: translateY(4px); }

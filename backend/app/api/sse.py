@@ -14,13 +14,14 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from app.auth.deps import require_user
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.sse import bus
 
 router = APIRouter(prefix="/api/conversations", tags=["sse"])
 
 _HEARTBEAT = 15.0
+_CUSTOMER_INTERNAL_EVENTS = frozenset({"thinking", "toolcall"})
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",  # chặn cache proxy/browser
@@ -30,8 +31,17 @@ _SSE_HEADERS = {
 }
 
 
+def _event_visible_to(ev: dict, claims: dict) -> bool:
+    """Do not expose model reasoning or internal tool traces to customer personas."""
+    return claims.get("role") != "customer" or ev.get("type") not in _CUSTOMER_INTERNAL_EVENTS
+
+
 @router.get("/{conv_id}/sse")
-async def sse(conv_id: str, request: Request, claims: dict = Depends(require_user)) -> StreamingResponse:
+async def sse(
+    conv_id: str,
+    request: Request,
+    claims: dict = Depends(require_permission("cases.read")),
+) -> StreamingResponse:
     # D-56 scoping: customer subscribe ca người khác → 404 (hide), KHÔNG stream. admin → mọi ca.
     from app.auth.deps import can_access_conv
     from app.orch import store
@@ -51,6 +61,8 @@ async def sse(conv_id: str, request: Request, claims: dict = Depends(require_use
                     break
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=_HEARTBEAT)
+                    if not _event_visible_to(ev, claims):
+                        continue
                     yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 except TimeoutError:
                     # S6: heartbeat = EVENT THẬT (data:) không comment (: ...) — native EventSource

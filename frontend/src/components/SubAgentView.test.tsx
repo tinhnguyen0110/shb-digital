@@ -21,9 +21,9 @@ beforeEach(() => {
 describe('SubAgentView', () => {
   it('header role + brief + trace từ audit', async () => {
     render(<SubAgentView task={task('running')} liveTrace={[]} convId="c1" onBack={vi.fn()} />);
-    expect(screen.getByText(/SUB Tín dụng/)).toBeInTheDocument();
+    expect(screen.getByText('Thẩm định tín dụng')).toBeInTheDocument();
     expect(screen.getByText('Thẩm định DSCR C001')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('cust_get')).toBeInTheDocument()); // audit row
+    await waitFor(() => expect(screen.getByText('Đối chiếu thông tin khách hàng')).toBeInTheDocument());
   });
 
   it('running → nút Huỷ hiện; done → ẩn', () => {
@@ -46,9 +46,9 @@ describe('SubAgentView', () => {
       { kind: 'thinking', id: 'th1', task_id: 't1', text: 'cân nhắc DSCR' },
     ];
     render(<SubAgentView task={task('running')} liveTrace={live} convId="c1" onBack={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText('cust_get')).toBeInTheDocument());
-    expect(screen.getByText('cân nhắc DSCR')).toBeInTheDocument();
-    expect(screen.getAllByText('cust_get').length).toBe(1); // không nhân đôi
+    await waitFor(() => expect(screen.getByText('Đối chiếu thông tin khách hàng')).toBeInTheDocument());
+    expect(screen.getByText('Đang phân tích thông tin hồ sơ')).toBeInTheDocument();
+    expect(screen.getAllByText('Đối chiếu thông tin khách hàng').length).toBe(1);
   });
 
   it('result render khi có', () => {

@@ -24,11 +24,11 @@ from app.orch.store import Task
 # biểu diễn kết cục. main_session gán runner SDK thật lúc boot; test inject fake.
 SubRunner = Callable[[Task], Awaitable[dict[str, Any]]]
 
-IDLE_TIMEOUT_S = 120
+SUB_TIMEOUT_S = 120
 
 
 class IdleTimeout(Exception):
-    """Sub im quá idle threshold (watchdog vỏ). Kết cục 'timeout' — VẪN báo (§5)."""
+    """Runner cũ có thể chủ động báo idle; vỏ còn áp hard wall timeout riêng."""
 
 
 # Event sink: room.py gán = handle_room_event bơm vào queue phòng. Test gán fake đếm event.
@@ -136,10 +136,14 @@ async def _run_sub(task: Task, runner: SubRunner | None = None) -> None:
             await store.mark_running(task.id)
             if run is None:
                 raise RuntimeError("no sub runner set (SDK chưa boot / test chưa inject)")
-            out = await run(task)
+            # Watchdog THẬT: runner SDK có thể treo ở connect/query mà không tự raise.
+            # Đây là trần TỔNG thời gian chạy sub (không phải idle timer reset theo message).
+            # wait_for cưỡng chế trần tại VỎ; khi hết hạn nó cancel runner,
+            # sau đó mọi đường vẫn hội tụ về _report trong finally bên ngoài.
+            out = await asyncio.wait_for(run(task), timeout=SUB_TIMEOUT_S)
             outcome, result = "done", out
-    except IdleTimeout:
-        outcome, result = "timeout", {"reason": f"idle {IDLE_TIMEOUT_S}s"}
+    except (IdleTimeout, TimeoutError):
+        outcome, result = "timeout", {"reason": f"quá thời gian tổng {SUB_TIMEOUT_S}s"}
     except asyncio.CancelledError:
         # BaseException — `except Exception` KHÔNG bắt. Gán rồi RE-RAISE (finally vẫn chạy).
         outcome, result = "failed", {"reason": "user hủy"}

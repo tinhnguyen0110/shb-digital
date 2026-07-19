@@ -114,6 +114,17 @@ async def test_sse_endpoint_headers_present():
     assert _SSE_HEADERS["Cache-Control"] == "no-cache"
 
 
+def test_customer_sse_hides_internal_reasoning_and_tool_trace():
+    from app.api.sse import _event_visible_to
+
+    customer = {"role": "customer"}
+    assert _event_visible_to({"type": "thinking"}, customer) is False
+    assert _event_visible_to({"type": "toolcall"}, customer) is False
+    assert _event_visible_to({"type": "chat.delta"}, customer) is True
+    assert _event_visible_to({"type": "card"}, customer) is True
+    assert _event_visible_to({"type": "thinking"}, {"role": "user"}) is True
+
+
 def test_sse_heartbeat_interval_15s():
     """S6: heartbeat 15s (SPEC §9) — client có traffic phát hiện đứt (SIGKILL onerror không fire)."""
     from app.api.sse import _HEARTBEAT

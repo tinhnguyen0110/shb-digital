@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.auth.deps import require_admin
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.orch import store_approvals
 
@@ -33,17 +33,24 @@ class DecideBody(BaseModel):
 
 
 @router.get("")
-async def list_approvals(status: str = Query("pending"), claims: dict = Depends(require_admin)) -> list[dict[str, Any]]:
+async def list_approvals(
+    status: str = Query("pending"),
+    claims: dict = Depends(require_permission("cases.approve")),
+) -> list[dict[str, Any]]:
     """Hàng chờ duyệt (admin). S3 chỉ status=pending (khác → 400)."""
     if status != "pending":
         raise ApiError(
             400, "bad_status", f"status '{status}' không hỗ trợ.", "Chỉ status=pending ở S3.", retryable=False
         )
-    return await store_approvals.list_pending()
+    return await store_approvals.list_pending(tenant_id=claims["tenant_id"])
 
 
 @router.post("/{approval_id}/decide")
-async def decide(approval_id: str, body: DecideBody, claims: dict = Depends(require_admin)) -> dict[str, Any]:
+async def decide(
+    approval_id: str,
+    body: DecideBody,
+    claims: dict = Depends(require_permission("cases.approve")),
+) -> dict[str, Any]:
     """ADMIN (ngân hàng — D-56) duyệt/từ chối phiếu → atomic → SSE + đánh thức main.
 
     decide atomic (UPDATE…WHERE status='pending') → None = 409 (đã quyết) hoặc 404 (không tồn tại).
@@ -58,11 +65,15 @@ async def decide(approval_id: str, body: DecideBody, claims: dict = Depends(requ
         )
 
     decided = await store_approvals.decide(
-        approval_id, body.decision, decided_by=claims.get("username", "admin"), reason=body.reason
+        approval_id,
+        body.decision,
+        decided_by=claims.get("username", "admin"),
+        reason=body.reason,
+        tenant_id=claims["tenant_id"],
     )
     if decided is None:
         # phân biệt 404 (không tồn tại) vs 409 (đã quyết) — chống double-wake
-        if await store_approvals.approval_exists(approval_id):
+        if await store_approvals.approval_exists(approval_id, tenant_id=claims["tenant_id"]):
             raise ApiError(
                 409,
                 "approval_already_decided",

@@ -2,7 +2,19 @@
 // Success = resource trần (không bọc {success,data}); error = 4-field {code,message,hint,retryable}.
 // Auth: S1 bypass (D-13/task T1-4 cho phép bypass + ghi deviation) — không gắn JWT header ở đây.
 
-import type { ApiError, ApprovalRow, AuditRow, AuthUser, CompareResult, Conversation, ConversationFullState, LoginResult, ModelsResponse } from '../types';
+import type {
+  AccessUser,
+  ApiError,
+  ApprovalRow,
+  AuditRow,
+  AuthUser,
+  CompareResult,
+  Conversation,
+  ConversationFullState,
+  LoginResult,
+  ModelsResponse,
+  RoleAccess,
+} from '../types';
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -44,6 +56,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type AccessUserPayload = Omit<AccessUser, 'active' | 'tenant_name'> & {
+  active?: boolean;
+  is_active?: boolean;
+  tenant_name?: string;
+  activation_required?: boolean;
+};
+
+function normalizeAccessUser(row: AccessUserPayload): AccessUser {
+  return {
+    ...row,
+    active: row.active ?? row.is_active ?? false,
+    tenant_name: row.tenant_name ?? '',
+  };
+}
+
 export const apiClient = {
   // login: cookie httponly shb_token do server set (credentials:'include' → browser tự lưu +
   // gửi lại mọi call sau, gồm EventSource withCredentials). CONTRACT §1.
@@ -54,16 +81,43 @@ export const apiClient = {
     });
   },
 
+  logout(): Promise<void> {
+    return request<void>('/api/auth/logout', { method: 'POST' });
+  },
+
   // boot-check (D-39/T3-0 · D-56): GET /api/me → {username, role, owner_id, user:{...}}.
   // 200 nếu đã login HOẶC DEV_SKIP_AUTH ON → skip Login; 401 → App hiện Login.
   // Map từ TOP-LEVEL (có owner_id — role customer/admin/user); fallback `user` wrap nếu server cũ
   // chỉ trả wrap (owner_id thiếu → null, không crash — defensive D-56).
   async me(): Promise<{ user: AuthUser }> {
-    const p = await request<{ username?: string; role?: string; owner_id?: string | null; user?: AuthUser }>('/api/me');
+    const p = await request<{
+      username?: string;
+      role?: string;
+      owner_id?: string | null;
+      display_name?: string;
+      tenant_id?: AuthUser['tenant_id'];
+      tenant_name?: string | null;
+      region?: AuthUser['region'];
+      permissions?: string[];
+      active?: boolean;
+      user?: AuthUser;
+    }>('/api/me');
     const username = p.username ?? p.user?.username ?? '';
     const role = (p.role ?? p.user?.role ?? 'user') as AuthUser['role'];
     const owner_id = p.owner_id ?? null;
-    return { user: { username, role, owner_id } };
+    return {
+      user: {
+        username,
+        role,
+        owner_id,
+        display_name: p.display_name ?? p.user?.display_name,
+        tenant_id: p.tenant_id ?? p.user?.tenant_id ?? null,
+        tenant_name: p.tenant_name ?? p.user?.tenant_name ?? null,
+        region: p.region ?? p.user?.region ?? null,
+        permissions: p.permissions ?? p.user?.permissions,
+        active: p.active ?? p.user?.active,
+      },
+    };
   },
 
   listConversations(): Promise<Conversation[]> {
@@ -116,6 +170,42 @@ export const apiClient = {
     return request<CompareResult>('/api/compare', {
       method: 'POST',
       body: JSON.stringify({ question }),
+    });
+  },
+
+  async listAccessUsers(): Promise<AccessUser[]> {
+    const rows = await request<AccessUserPayload[]>('/api/access/users');
+    return rows.map(normalizeAccessUser);
+  },
+
+  async createAccessUser(input: { username: string; display_name: string; role: 'user' }): Promise<AccessUser> {
+    const row = await request<AccessUserPayload>('/api/access/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    return normalizeAccessUser(row);
+  },
+
+  async updateAccessUser(id: string, input: { active?: boolean }): Promise<AccessUser> {
+    const row = await request<AccessUserPayload>(`/api/access/users/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+    return normalizeAccessUser(row);
+  },
+
+  async listRoleAccess(): Promise<RoleAccess[]> {
+    const rows = await request<Array<RoleAccess & { label?: string }>>('/api/access/roles');
+    return rows.map((row) => ({
+      ...row,
+      label: row.label ?? (row.role === 'admin' ? 'Quản lý khu vực' : 'Nhân viên tín dụng'),
+    }));
+  },
+
+  updateRoleAccess(role: 'user' | 'admin', permissions: string[]): Promise<RoleAccess> {
+    return request<RoleAccess>(`/api/access/roles/${encodeURIComponent(role)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
     });
   },
 

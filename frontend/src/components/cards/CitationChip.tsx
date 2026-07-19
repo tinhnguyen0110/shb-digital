@@ -2,6 +2,7 @@
 // (onCite gọi lại với taskId+source). Trace view đầy đủ = S4. "Mọi con số có nguồn" — điểm
 // demo bank (canvas-present §3). DRY: dùng chung mọi card type.
 import './CitationChip.css';
+import { sourceLabel } from '../../uiCopy';
 
 interface Props {
   source: string;
@@ -10,16 +11,17 @@ interface Props {
 }
 
 export function CitationChip({ source, taskId, onCite }: Props) {
+  const label = sourceLabel(source);
   return (
     <button
       type="button"
       className="cite-chip"
-      title={`Nguồn: ${source}${taskId ? ` (trace task ${taskId.slice(0, 8)}…)` : ''} — bấm để soi tool-call`}
+      title={`Nguồn tham chiếu: ${label}`}
       onClick={() => onCite?.(taskId, source)}
       data-testid={`cite-${source}`}
     >
       <span className="cite-chip__icon" aria-hidden="true">⛬</span>
-      {source}
+      {label}
     </button>
   );
 }

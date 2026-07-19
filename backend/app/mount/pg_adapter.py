@@ -14,6 +14,7 @@ raw KHÔNG có:
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Iterator
 from typing import Any
 
@@ -180,12 +181,17 @@ class PGConnAdapter:
 # ---------------------------------------------------------------------------
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_pool_lock = threading.Lock()
 
 
 def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     global _pool
     if _pool is None:
-        _pool = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
+        # Handler chạy bằng asyncio.to_thread: nhiều call đầu có thể vào đây đồng thời.
+        # Double-check dưới lock để chỉ khởi tạo đúng một pool.
+        with _pool_lock:
+            if _pool is None:
+                _pool = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
     return _pool
 
 

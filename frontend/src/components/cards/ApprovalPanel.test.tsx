@@ -17,7 +17,7 @@ function approvalCard(over: Partial<Card> = {}): Card {
 describe('ApprovalPanel', () => {
   it('pending → nút Duyệt/Từ chối + ô lý do + items render', () => {
     render(<ApprovalPanel card={approvalCard()} onDecide={vi.fn()} />);
-    expect(screen.getByText('Giải ngân L001')).toBeInTheDocument();
+    expect(screen.getByText('Phê duyệt giải ngân')).toBeInTheDocument();
     expect(screen.getByText('5,000,000,000 VND')).toBeInTheDocument();
     expect(screen.getByText(/CHỜ DUYỆT/)).toBeInTheDocument();
     expect(screen.getByTestId('approval-approve')).toBeInTheDocument();
@@ -43,20 +43,20 @@ describe('ApprovalPanel', () => {
     render(<ApprovalPanel card={approvalCard({ status: 'approved', decided_by: 'admin' })} onDecide={vi.fn()} />);
     expect(screen.getByText(/ĐÃ DUYỆT/)).toBeInTheDocument();
     expect(screen.queryByTestId('approval-approve')).not.toBeInTheDocument();
-    expect(screen.getByText(/hành động thực thi/)).toBeInTheDocument();
+    expect(screen.getByText(/ghi nhận vào hồ sơ/)).toBeInTheDocument();
     expect(screen.getByText(/admin/)).toBeInTheDocument();
   });
 
   it('status=rejected → badge TỪ CHỐI + text dừng', () => {
     render(<ApprovalPanel card={approvalCard({ status: 'rejected', reason: 'DSCR thấp' })} onDecide={vi.fn()} />);
     expect(screen.getByText(/TỪ CHỐI/)).toBeInTheDocument();
-    expect(screen.getByText(/Main dừng hành động/)).toBeInTheDocument();
+    expect(screen.getByText(/Chuyên viên phụ trách sẽ được thông báo/)).toBeInTheDocument();
     expect(screen.getByText(/DSCR thấp/)).toBeInTheDocument();
   });
 
   it('thiếu approval_id → nút disabled + cảnh báo (defensive; approval_id CHỐT, không fallback card.id)', () => {
     render(<ApprovalPanel card={approvalCard({ approval_id: undefined })} onDecide={vi.fn()} />);
-    expect(screen.getByText(/Thiếu mã phiếu/)).toBeInTheDocument();
+    expect(screen.getByText(/Chưa có mã yêu cầu phê duyệt/)).toBeInTheDocument();
     expect(screen.getByTestId('approval-approve')).toBeDisabled();
   });
 
@@ -78,7 +78,7 @@ describe('ApprovalPanel', () => {
   it('canDecide=false + approved → vẫn render kết quả như cũ (khách thấy kết quả, chỉ không quyết)', () => {
     render(<ApprovalPanel card={approvalCard({ status: 'approved' })} onDecide={vi.fn()} canDecide={false} />);
     expect(screen.getByText(/ĐÃ DUYỆT/)).toBeInTheDocument();
-    expect(screen.getByText(/hành động thực thi/)).toBeInTheDocument();
+    expect(screen.getByText(/ghi nhận vào hồ sơ/)).toBeInTheDocument();
     expect(screen.queryByTestId('approval-waiting')).not.toBeInTheDocument(); // chỉ pending mới "chờ"
   });
 

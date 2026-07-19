@@ -9,6 +9,7 @@ import { mockBackend } from './api/mock';
 import type { AuthUser } from './types';
 
 const USER: AuthUser = { username: 'user', role: 'user' };
+const CUSTOMER: AuthUser = { username: 'c001', role: 'customer', owner_id: 'C001' };
 const noop = vi.fn();
 
 // mockBackend singleton → reset giữa test để rooms/tasks không leak (ca cũ auto-select lúc mount).
@@ -19,10 +20,10 @@ describe('Workspace chat — vòng lõi S1 (mock API)', () => {
     render(<Workspace user={USER} onAuthExpired={noop} />);
 
     // ban đầu: empty state
-    expect(screen.getByText(/Chưa mở ca nào/i)).toBeInTheDocument();
+    expect(screen.getByText(/Chưa mở hồ sơ nào/i)).toBeInTheDocument();
 
     // "+ Ca mới" → khung soạn (draft): composer + picker hiện, ca CHƯA tạo (lazy — D-45b)
-    fireEvent.click(screen.getByRole('button', { name: /Ca mới/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hồ sơ mới/i }));
 
     // ô nhập xuất hiện (draft mode)
     const input = await screen.findByLabelText('Ô nhập câu hỏi');
@@ -35,31 +36,31 @@ describe('Workspace chat — vòng lõi S1 (mock API)', () => {
     // chờ tới khi stream chạy XONG câu trả lời (credit_assess đứng sau DSCR trong answer —
     // chờ nó đảm bảo cả DSCR 3.709 + nguồn đều đã render). Số kèm nguồn — SPEC §6.
     await waitFor(
-      () => expect(screen.getAllByText(/credit_assess/).length).toBeGreaterThan(0),
+      () => expect(screen.getAllByText(/DSCR = 3\.709/).length).toBeGreaterThan(0),
       { timeout: 5000 },
     );
     expect(screen.getAllByText(/DSCR = 3\.709/).length).toBeGreaterThan(0);
 
     // badge task credit chuyển "xong"
-    const tasksPanel = screen.getByLabelText('Đội đang làm việc');
+    const tasksPanel = screen.getByLabelText('Tiến độ phối hợp xử lý');
     await waitFor(() =>
-      expect(within(tasksPanel).getByText(/Tín dụng · ✓ xong/)).toBeInTheDocument(),
+      expect(within(tasksPanel).getByText(/Thẩm định tín dụng · ✓ hoàn tất/)).toBeInTheDocument(),
     );
   });
 
   it('câu không liên quan tín dụng → vẫn stream trả lời, không tạo task credit', async () => {
     render(<Workspace user={USER} onAuthExpired={noop} />);
-    fireEvent.click(screen.getByRole('button', { name: /Ca mới/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hồ sơ mới/i }));
     const input = await screen.findByLabelText('Ô nhập câu hỏi');
     fireEvent.change(input, { target: { value: 'Xin chào' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(
-      () => expect(screen.getByText(/mock không nhận diện/i)).toBeInTheDocument(),
+      () => expect(screen.getByText(/Nội dung đã được ghi nhận/i)).toBeInTheDocument(),
       { timeout: 5000 },
     );
     // không có bảng task
-    expect(screen.queryByLabelText('Đội đang làm việc')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Tiến độ phối hợp xử lý')).not.toBeInTheDocument();
   });
 
   it('mở ca CÓ SẴN → hydrate trace toolcall từ GET /api/audit (reload-safe T4-2 fix)', async () => {
@@ -77,43 +78,62 @@ describe('Workspace chat — vòng lõi S1 (mock API)', () => {
     fireEvent.click(container.querySelector('.conv-sidebar__title')!);
     await waitFor(() => expect(screen.getByTestId('trace-block')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByText('credit_assess')).toBeInTheDocument();
+    expect(screen.getByText('Đánh giá thông tin tín dụng')).toBeInTheDocument();
     vi.restoreAllMocks();
   });
 
   it('SUB fail (§4b Gap2 A) → badge failed + render task.result.reason + badge ca "Lỗi"', async () => {
     render(<Workspace user={USER} onAuthExpired={noop} />);
-    fireEvent.click(screen.getByRole('button', { name: /Ca mới/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hồ sơ mới/i }));
     const input = await screen.findByLabelText('Ô nhập câu hỏi');
     fireEvent.change(input, { target: { value: 'C001 vay — credit fail đi' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // reason từ task.result.reason hiển thị (không phải chỉ badge)
     await waitFor(
-      () => expect(screen.getByText(/timeout sau 120s/i)).toBeInTheDocument(),
+      () => expect(screen.getByText(/Nội dung chưa hoàn tất/i)).toBeInTheDocument(),
       { timeout: 5000 },
     );
     // badge task đỏ
-    const tasksPanel = screen.getByLabelText('Đội đang làm việc');
-    expect(within(tasksPanel).getByText(/Tín dụng · ✗ lỗi/)).toBeInTheDocument();
-    // badge trạng thái ca = Lỗi
-    await waitFor(() => expect(screen.getAllByText(/^Lỗi$/).length).toBeGreaterThan(0));
+    const tasksPanel = screen.getByLabelText('Tiến độ phối hợp xử lý');
+    expect(within(tasksPanel).getByText(/Thẩm định tín dụng · ✗ cần kiểm tra/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText(/^Cần bổ sung$/).length).toBeGreaterThan(0));
   });
 
   it('MAIN fail (§4b Gap2 B) → system message lỗi + badge ca "Lỗi", KHÔNG treo bubble streaming', async () => {
     render(<Workspace user={USER} onAuthExpired={noop} />);
-    fireEvent.click(screen.getByRole('button', { name: /Ca mới/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Hồ sơ mới/i }));
     const input = await screen.findByLabelText('Ô nhập câu hỏi');
     fireEvent.change(input, { target: { value: 'lỗi main mô phỏng quá tải' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // nội dung lỗi hiển thị (đến qua chat.delta done full_text — §4b Gap2 B)
     await waitFor(
-      () => expect(screen.getByText(/MAIN hết trần retry/i)).toBeInTheDocument(),
+      () => expect(screen.getByText(/Quá trình xử lý chưa hoàn tất/i)).toBeInTheDocument(),
       { timeout: 5000 },
     );
     // bubble streaming đã đóng (done kết lượt — không treo)
     await waitFor(() => expect(screen.queryByTestId('streaming-bubble')).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getAllByText(/^Lỗi$/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/^Cần bổ sung$/).length).toBeGreaterThan(0));
+  });
+
+  it('customer không thấy model/trace/lobby kỹ thuật và vẫn gửi thêm khi ca đang chạy', async () => {
+    render(<Workspace user={CUSTOMER} onAuthExpired={noop} />);
+    fireEvent.click(screen.getByRole('button', { name: /Hồ sơ mới/i }));
+
+    expect(screen.queryByLabelText('Chọn phương án xử lý')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Bộ phận phối hợp/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Kết quả hồ sơ/i })).toBeInTheDocument();
+
+    const input = await screen.findByLabelText('Ô nhập câu hỏi');
+    fireEvent.change(input, { target: { value: 'Khách C001 xin vay 5 tỷ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await screen.findByText(/Khách C001 xin vay 5 tỷ/);
+    expect(input).not.toBeDisabled();
+    fireEvent.change(input, { target: { value: 'Bổ sung mục đích mua nhà' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByText('Bổ sung mục đích mua nhà')).toBeInTheDocument();
+    expect(screen.queryByTestId('trace-block')).not.toBeInTheDocument();
   });
 });

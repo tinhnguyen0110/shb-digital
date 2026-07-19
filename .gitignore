@@ -38,3 +38,4 @@ CLAUDE.md
 # Logs & data
 *.log
 logs/
+.tools/

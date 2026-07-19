@@ -8,6 +8,7 @@ import { ApiRequestError } from '../api/client';
 import { useApprovalBadge } from '../hooks/useApprovalBadge';
 import { roleLabel } from '../roles';
 import type { ApprovalRow, AuditRow, CompareResult, CompareSide, Conversation } from '../types';
+import { activityLabel, approvalActionLabel } from '../uiCopy';
 import './ControlTower.css';
 
 type Tab = 'queue' | 'audit' | 'agents' | 'compare';
@@ -19,9 +20,9 @@ export function ControlTower({ onBack }: { onBack: () => void }) {
   return (
     <div className="ct">
       <header className="ct__head">
-        <button type="button" className="ct__back" onClick={onBack}>← Workspace</button>
-        <span className="ct__title">🗼 Control Tower</span>
-        <span className="ct__sub">Giám sát · phê duyệt · nhật ký — quản lý</span>
+        <button type="button" className="ct__back" onClick={onBack}>← Quay lại</button>
+        <span className="ct__title">Trung tâm giám sát</span>
+        <span className="ct__sub">Phê duyệt · nhật ký hoạt động · tổng hợp vận hành</span>
         <div className="ct__tabs">
           {(['queue', 'audit', 'agents', 'compare'] as Tab[]).map((t) => (
             <button
@@ -30,7 +31,7 @@ export function ControlTower({ onBack }: { onBack: () => void }) {
               className={`ct__tab${tab === t ? ' ct__tab--active' : ''}`}
               onClick={() => setTab(t)}
             >
-              {t === 'queue' ? 'Hàng chờ duyệt' : t === 'audit' ? 'Nhật ký tool' : t === 'agents' ? 'Trạng thái đội' : 'So sánh 1 vs đội'}
+              {t === 'queue' ? 'Phê duyệt' : t === 'audit' ? 'Nhật ký hoạt động' : t === 'agents' ? 'Tiến độ xử lý' : 'Đối chiếu kết quả'}
               {t === 'queue' && pending > 0 && (
                 <span className="ct__tab-badge" data-testid="ct-queue-badge">{pending}</span>
               )}
@@ -59,7 +60,7 @@ function ApprovalQueue() {
     conversationApi
       .listApprovals('pending')
       .then((r) => { setRows(r); setError(null); })
-      .catch((e: unknown) => setError(e instanceof ApiRequestError ? e.body?.message ?? 'Lỗi tải hàng chờ' : 'Lỗi tải hàng chờ'));
+      .catch(() => setError('Chưa tải được danh sách chờ phê duyệt. Vui lòng thử lại.'));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -71,7 +72,7 @@ function ApprovalQueue() {
       .then(() => { setRows((prev) => prev.filter((r) => r.id !== row.id)); }) // rời khỏi hàng chờ
       .catch((e: unknown) => {
         if (e instanceof ApiRequestError && e.status === 409) { setRows((prev) => prev.filter((r) => r.id !== row.id)); }
-        else setError('Quyết phiếu thất bại');
+        else setError('Chưa ghi nhận được quyết định. Vui lòng thử lại.');
       })
       .finally(() => setBusyId(null));
   };
@@ -79,26 +80,26 @@ function ApprovalQueue() {
   return (
     <div className="ct__section">
       <div className="ct__section-head">
-        <span className="ct__section-title">Hàng chờ phê duyệt ({rows.length})</span>
-        <button type="button" className="ct__refresh" onClick={load}>⟳ Tải lại</button>
+        <span className="ct__section-title">Yêu cầu chờ phê duyệt ({rows.length})</span>
+        <button type="button" className="ct__refresh" onClick={load}>Tải lại</button>
       </div>
       {error && <div className="ct__error">{error}</div>}
       {rows.length === 0 ? (
-        <div className="ct__empty" data-testid="queue-empty">Không có phiếu nào chờ duyệt.</div>
+        <div className="ct__empty" data-testid="queue-empty">Không có yêu cầu nào chờ phê duyệt.</div>
       ) : (
         <div className="ct__rows">
           {rows.slice(0, 50).map((row) => (
             <div key={row.id} className="ct__appr-row" data-testid={`queue-row-${row.id}`}>
-              <span className="ct__appr-action">🔒 {row.action}</span>
-              <span className="ct__appr-conv">{shortId(row.conv_id)}</span>
-              <span className="ct__appr-payload">{summarize(row.payload)}</span>
+              <span className="ct__appr-action">{approvalActionLabel(row.action)}</span>
+              <span className="ct__appr-conv">Hồ sơ {shortId(row.conv_id)}</span>
+              <span className="ct__appr-payload">Đang chờ quyết định của quản lý</span>
               <div className="ct__appr-btns">
                 <button type="button" className="btn btn--ok ct__appr-btn" onClick={() => decide(row, 'approved')} disabled={busyId === row.id}>✓ Duyệt</button>
                 <button type="button" className="btn btn--danger ct__appr-btn" onClick={() => decide(row, 'rejected')} disabled={busyId === row.id}>✗ Từ chối</button>
               </div>
             </div>
           ))}
-          {rows.length > 50 && <div className="ct__more">… và {rows.length - 50} phiếu nữa (hiển thị 50 đầu)</div>}
+          {rows.length > 50 && <div className="ct__more">Còn {rows.length - 50} yêu cầu khác chưa hiển thị.</div>}
         </div>
       )}
     </div>
@@ -119,7 +120,7 @@ function AuditView() {
     conversationApi
       .auditFiltered(filters)
       .then((r) => { setRows(r); setError(null); })
-      .catch(() => setError('Lỗi tải nhật ký'));
+      .catch(() => setError('Chưa tải được nhật ký hoạt động. Vui lòng thử lại.'));
   }, [convId, tool]);
 
   useEffect(() => { load(); }, [load]);
@@ -127,23 +128,23 @@ function AuditView() {
   return (
     <div className="ct__section">
       <div className="ct__section-head">
-        <span className="ct__section-title">Nhật ký tool-call ({rows.length})</span>
-        <input className="ct__filter" placeholder="Lọc conv_id…" value={convId} onChange={(e) => setConvId(e.target.value)} aria-label="Lọc conv_id" />
-        <input className="ct__filter" placeholder="Lọc tool…" value={tool} onChange={(e) => setTool(e.target.value)} aria-label="Lọc tool" />
+        <span className="ct__section-title">Nhật ký hoạt động ({rows.length})</span>
+        <input className="ct__filter" placeholder="Mã hồ sơ…" value={convId} onChange={(e) => setConvId(e.target.value)} aria-label="Lọc theo mã hồ sơ" />
+        <input className="ct__filter" placeholder="Nội dung hoạt động…" value={tool} onChange={(e) => setTool(e.target.value)} aria-label="Lọc theo nội dung hoạt động" />
       </div>
       {error && <div className="ct__error">{error}</div>}
       {rows.length === 0 ? (
-        <div className="ct__empty">Không có tool-call (thử lọc conv_id của 1 ca có hoạt động).</div>
+        <div className="ct__empty">Chưa có hoạt động phù hợp với điều kiện lọc.</div>
       ) : (
         <table className="ct__audit">
-          <thead><tr><th>Thời điểm</th><th>Actor</th><th>Tool</th><th>Input</th></tr></thead>
+          <thead><tr><th>Thời điểm</th><th>Bộ phận</th><th>Hoạt động</th><th>Thông tin liên quan</th></tr></thead>
           <tbody>
             {rows.slice(0, 100).map((r) => (
               <tr key={r.id}>
                 <td className="ct__audit-ts">{fmtTs(r.ts)}</td>
-                <td className="ct__audit-actor">{r.actor === 'main' ? 'Main' : roleLabel(r.actor)}</td>
-                <td><code className="ct__audit-tool">{r.tool}</code></td>
-                <td className="ct__audit-in">{summarize(r.input)}</td>
+                <td className="ct__audit-actor">{r.actor === 'main' ? 'Điều phối hồ sơ' : roleLabel(r.actor)}</td>
+                <td><span className="ct__audit-tool">{activityLabel(r.tool)}</span></td>
+                <td className="ct__audit-in">{formatAuditDetails(r.input)}</td>
               </tr>
             ))}
           </tbody>
@@ -162,7 +163,7 @@ function AgentStatus() {
     conversationApi
       .listConversations()
       .then((c) => { setConvs(c); setError(null); })
-      .catch(() => setError('Lỗi tải danh sách ca'));
+      .catch(() => setError('Chưa tải được tiến độ hồ sơ. Vui lòng thử lại.'));
   }, []);
 
   const byStatus = convs.reduce<Record<string, number>>((acc, c) => {
@@ -172,7 +173,7 @@ function AgentStatus() {
 
   return (
     <div className="ct__section">
-      <div className="ct__section-title">Trạng thái đội — {convs.length} ca</div>
+      <div className="ct__section-title">Tiến độ xử lý — {convs.length} hồ sơ</div>
       {error && <div className="ct__error">{error}</div>}
       <div className="ct__stat-grid">
         {(['running', 'waiting_approval', 'done', 'failed', 'idle'] as const).map((s) => (
@@ -183,15 +184,18 @@ function AgentStatus() {
         ))}
       </div>
       <div className="ct__note">
-        💰 Cost meter: chi phí tính theo LƯỢT (tasks.cost per-turn) — cost per-tool chưa có (SDK không tách, D-48).
-        Mở 1 ca ở Workspace để xem cost per-turn của lượt đó.
+        Số liệu được tổng hợp theo từng hồ sơ và cập nhật theo tiến độ xử lý gần nhất.
       </div>
     </div>
   );
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  running: 'Đang chạy', waiting_approval: 'Chờ duyệt', done: 'Hoàn tất', failed: 'Lỗi', idle: 'Sẵn sàng',
+  running: 'Đang thẩm định',
+  waiting_approval: 'Chờ phê duyệt',
+  done: 'Hoàn tất',
+  failed: 'Cần bổ sung',
+  idle: 'Mới tiếp nhận',
 };
 
 // ── Deliverable #5: compare single-agent vs multi-agent (2 cột) ──
@@ -209,13 +213,13 @@ function CompareView() {
     conversationApi
       .runCompare(question.trim())
       .then((r) => setResult(r))
-      .catch(() => setError('So sánh thất bại — thử lại (chạy 2 chế độ mất ~90s).'))
+      .catch(() => setError('Chưa hoàn tất đối chiếu. Vui lòng thử lại sau.'))
       .finally(() => setRunning(false));
   };
 
   return (
     <div className="ct__section">
-      <div className="ct__section-title">So sánh: 1 LLM trần vs cả ĐỘI (deliverable #5)</div>
+      <div className="ct__section-title">Đối chiếu kết quả hỗ trợ thẩm định</div>
       <div className="ct__cmp-input">
         <input
           className="ct__cmp-q"
@@ -226,15 +230,15 @@ function CompareView() {
           disabled={running}
         />
         <button type="button" className="btn btn--primary ct__cmp-run" onClick={run} disabled={running} data-testid="compare-run">
-          {running ? 'Đang chạy 2 chế độ…' : '▶ Chạy so sánh'}
+          {running ? 'Đang đối chiếu…' : 'Bắt đầu đối chiếu'}
         </button>
       </div>
-      {running && <div className="ct__cmp-loading">⏳ Đang chạy SINGLE + MULTI song song — mất ~90s (model chạy thật, kiên nhẫn)…</div>}
+      {running && <div className="ct__cmp-loading">Đang tổng hợp kết quả từ hai phương thức hỗ trợ. Quá trình này có thể mất khoảng 90 giây.</div>}
       {error && <div className="ct__error">{error}</div>}
       {result && (
         <div className="ct__cmp-cols">
-          <CompareColumn title="1 LLM TRẦN (single)" side={result.single} accent="single" />
-          <CompareColumn title="CẢ ĐỘI (multi-agent)" side={result.multi} accent="multi" />
+          <CompareColumn title="Phương thức cơ bản" side={result.single} accent="single" />
+          <CompareColumn title="Phối hợp chuyên môn" side={result.multi} accent="multi" />
         </div>
       )}
     </div>
@@ -246,7 +250,7 @@ function CompareColumn({ title, side, accent }: { title: string; side: CompareSi
     return (
       <div className={`ct__cmp-col ct__cmp-col--${accent}`}>
         <div className="ct__cmp-col-title">{title}</div>
-        <div className="ct__cmp-partial">Không có kết quả (chế độ này timeout / lỗi — partial).</div>
+        <div className="ct__cmp-partial">Chưa có kết quả từ phương thức này.</div>
       </div>
     );
   }
@@ -254,13 +258,12 @@ function CompareColumn({ title, side, accent }: { title: string; side: CompareSi
     <div className={`ct__cmp-col ct__cmp-col--${accent}`}>
       <div className="ct__cmp-col-title">{title}</div>
       <div className="ct__cmp-metrics">
-        {side.duration_s != null && <span className="ct__cmp-metric">⏱ {side.duration_s}s</span>}
-        {side.tool_calls != null && <span className="ct__cmp-metric">🔧 {side.tool_calls} tool</span>}
-        {side.cards != null && <span className="ct__cmp-metric">▦ {side.cards} card</span>}
-        {side.cost != null && <span className="ct__cmp-metric">💰 {summarize(side.cost)}</span>}
+        {side.duration_s != null && <span className="ct__cmp-metric">Thời gian: {side.duration_s} giây</span>}
+        {side.tool_calls != null && <span className="ct__cmp-metric">{side.tool_calls} bước xử lý</span>}
+        {side.cards != null && <span className="ct__cmp-metric">{side.cards} kết quả tổng hợp</span>}
       </div>
       <div className="ct__cmp-text">{side.text ?? '(không có nội dung)'}</div>
-      {side.conv_id && <div className="ct__cmp-link">Ca thật: <code>{shortId(side.conv_id)}</code> (mở ở Workspace để xem trace đầy đủ)</div>}
+      {side.conv_id && <div className="ct__cmp-link">Hồ sơ tham chiếu: {shortId(side.conv_id)}</div>}
     </div>
   );
 }
@@ -268,9 +271,13 @@ function CompareColumn({ title, side, accent }: { title: string; side: CompareSi
 function shortId(id: string): string {
   return id.length > 14 ? `${id.slice(0, 10)}…` : id;
 }
-function summarize(obj: unknown): string {
-  if (obj == null) return '';
-  try { return JSON.stringify(obj).slice(0, 90); } catch { return ''; }
+function formatAuditDetails(input: Record<string, unknown> | null | undefined): string {
+  if (!input) return 'Đã ghi nhận';
+  const customerId = input.customer_id ?? input.owner_id;
+  if (typeof customerId === 'string' && customerId.trim()) {
+    return `Mã khách hàng: ${customerId}`;
+  }
+  return 'Đã ghi nhận';
 }
 function fmtTs(ts: string): string {
   return ts ? ts.slice(0, 19).replace('T', ' ') : '';

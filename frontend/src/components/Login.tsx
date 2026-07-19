@@ -1,13 +1,12 @@
-// components/Login.tsx — màn đăng nhập (CONTRACT §1 · D-19). 2 account seed: user/admin.
-// Login thành công → cookie httponly shb_token do server set (credentials:'include') → mọi call
-// sau authenticated. onSuccess trả AuthUser cho App gate vào Workspace.
+// Đăng nhập nội bộ cho staff/admin. Khách vay không đi qua màn hình này.
+import { ArrowLeft } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { conversationApi, USE_MOCK_API } from '../api';
 import { ApiRequestError } from '../api/client';
 import type { AuthUser } from '../types';
 import './Login.css';
 
-export function Login({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
+export function Login({ onSuccess, onBack }: { onSuccess: (user: AuthUser) => void; onBack?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,9 +29,11 @@ export function Login({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
       .login(username, password)
       .then((res) => onSuccess(res.user))
       .catch((err: unknown) => {
-        if (err instanceof ApiRequestError && err.body) setError(err.body.message);
-        else if (err instanceof Error) setError(`Đăng nhập thất bại: ${err.message}`);
-        else setError('Đăng nhập thất bại');
+        if (err instanceof ApiRequestError && err.status === 401) {
+          setError('Tên đăng nhập hoặc mật khẩu không đúng.');
+        } else {
+          setError('Không thể đăng nhập. Vui lòng thử lại sau.');
+        }
       })
       .finally(() => setBusy(false));
   };
@@ -40,21 +41,26 @@ export function Login({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
   return (
     <div className="login">
       <form className="login__card" onSubmit={submit}>
+        {onBack && (
+          <button className="login__back" type="button" onClick={onBack}>
+            <ArrowLeft size={15} /> Quay lại trang tư vấn
+          </button>
+        )}
         <div className="login__brand">
-          <span className="login__logo">G</span>
+          <span className="login__logo">S</span>
           <div>
-            <div className="login__title">Digital Expert Guild</div>
-            <div className="login__sub">Đội chuyên gia số ngân hàng — SHB #132</div>
+            <div className="login__title">Đăng nhập nội bộ SHB</div>
+            <div className="login__sub">Dành cho nhân viên và quản lý</div>
           </div>
         </div>
 
-        {USE_MOCK_API && <div className="login__mockflag">● MOCK API — mọi credential đều vào được</div>}
+        {USE_MOCK_API && <div className="login__mockflag">MÔI TRƯỜNG DEMO · Dữ liệu minh họa</div>}
 
         <label className="login__field">
           <span>Tên đăng nhập</span>
           <input
             name="username"
-            defaultValue="user"
+            defaultValue="staff"
             autoComplete="username"
             aria-label="Tên đăng nhập"
           />
@@ -75,7 +81,11 @@ export function Login({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
           {busy ? 'Đang đăng nhập…' : 'Đăng nhập'}
         </button>
 
-        <div className="login__hint">Demo: <b>user / user</b> (RM) · <b>admin / admin</b> (quản lý)</div>
+        {USE_MOCK_API && (
+          <div className="login__hint">
+            Demo: <b>staff / staff</b> — Nhân viên tín dụng · <b>admin / admin</b> — Quản lý
+          </div>
+        )}
       </form>
     </div>
   );

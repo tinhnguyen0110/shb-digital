@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import type { Card } from '../../types';
 import { cardItems, cardField, itemField, renderValue } from './cardUtil';
+import { approvalActionLabel } from '../../uiCopy';
 import './ApprovalPanel.css';
 
 // decision value CHỐT theo backend T3-2: "approved" | "rejected" (KHÔNG "approve"/"reject" → 400).
@@ -34,7 +35,8 @@ export function ApprovalPanel({ card, onDecide, canDecide = true }: { card: Card
   const items = cardItems(card);
   const status = approvalStatus(card);
   const id = approvalId(card);
-  const action = renderValue(cardField(card, 'action') ?? 'Hành động cần duyệt');
+  const actionValue = renderValue(cardField(card, 'action') ?? '');
+  const action = approvalActionLabel(actionValue);
   const pending = status === 'pending';
 
   const decide = (decision: ApprovalDecision) => {
@@ -99,7 +101,7 @@ export function ApprovalPanel({ card, onDecide, canDecide = true }: { card: Card
               ✗ Từ chối
             </button>
           </div>
-          {!id && <div className="approval__warn">Thiếu mã phiếu — không thể quyết (chờ vỏ inject id).</div>}
+          {!id && <div className="approval__warn">Chưa có mã yêu cầu phê duyệt. Vui lòng tải lại hồ sơ.</div>}
         </div>
       ) : (
         <div className="approval__resolved">
@@ -127,8 +129,8 @@ function decidedText(card: Card, status: string): string {
   const reason = cardField<string>(card, 'reason');
   const base =
     status === 'rejected'
-      ? 'Phiếu bị từ chối — Main dừng hành động, RM được thông báo.'
-      : 'Phiếu đã duyệt — hành động thực thi, biên nhận đã lưu.';
+      ? 'Yêu cầu đã bị từ chối. Chuyên viên phụ trách sẽ được thông báo.'
+      : 'Yêu cầu đã được phê duyệt và ghi nhận vào hồ sơ.';
   const who = by ? ` Bởi: ${by}.` : '';
   const why = reason ? ` Lý do: ${reason}.` : '';
   return base + who + why;

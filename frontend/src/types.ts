@@ -6,11 +6,19 @@
 // 'customer' = khách hàng (cửa khách, chat + agent tự duyệt khoản nhỏ); 'admin' = ngân hàng
 // (duyệt khoản lớn, Control Tower); 'user' = nhân viên thường (giữ backward, không admin).
 export type UserRole = 'customer' | 'user' | 'admin';
+export type RegionCode = 'north' | 'central' | 'south';
+export type TenantId = 'shb-north' | 'shb-central' | 'shb-south';
 
 export interface AuthUser {
   username: string;
   role: UserRole;
   owner_id?: string | null; // D-56 — mã khách của account (customer); admin/user = null. Thiếu (server cũ) → null.
+  display_name?: string;
+  tenant_id?: TenantId | null;
+  tenant_name?: string | null;
+  region?: RegionCode | null;
+  permissions?: string[];
+  active?: boolean;
 }
 
 // POST /api/auth/login trả {token, user} + set cookie httponly shb_token.
@@ -19,11 +27,29 @@ export interface LoginResult {
   user: AuthUser;
 }
 
+export interface AccessUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: 'user' | 'admin';
+  tenant_id: TenantId;
+  tenant_name: string;
+  active: boolean;
+  activation_required?: boolean;
+}
+
+export interface RoleAccess {
+  role: 'user' | 'admin';
+  label: string;
+  permissions: string[];
+}
+
 export type ConversationStatus = 'running' | 'waiting_approval' | 'done' | 'failed' | 'idle';
 
 export interface Conversation {
   id: string;
   user_id?: string;
+  tenant_id?: TenantId | null;
   title: string;
   status: ConversationStatus;
   sdk_session_id?: string | null;

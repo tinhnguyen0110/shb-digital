@@ -6,14 +6,15 @@ import { useEffect, useState } from 'react';
 import { conversationApi } from '../api';
 import { ApiRequestError } from '../api/client';
 import { roleLabel } from '../roles';
+import { activityLabel } from '../uiCopy';
 import type { AuditRow, OrchTask, TraceItem } from '../types';
 import './SubAgentView.css';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  queued: { label: '● Hàng đợi', cls: 'sav__status--run' },
-  running: { label: '● Đang làm việc…', cls: 'sav__status--run' },
-  done: { label: '✓ Hoàn tất — đã bàn giao Main', cls: 'sav__status--done' },
-  failed: { label: '✗ Đã huỷ / lỗi', cls: 'sav__status--fail' },
+  queued: { label: '● Chờ tiếp nhận', cls: 'sav__status--run' },
+  running: { label: '● Đang xử lý…', cls: 'sav__status--run' },
+  done: { label: '✓ Hoàn tất — đã cập nhật hồ sơ', cls: 'sav__status--done' },
+  failed: { label: '✗ Cần kiểm tra', cls: 'sav__status--fail' },
 };
 
 // gộp audit rows (persist) + live trace (SSE theo task_id) → 1 danh sách dòng, dedup toolcall theo id.
@@ -81,8 +82,11 @@ export function SubAgentView({ task, liveTrace, convId, onBack }: Props) {
     conversationApi
       .interruptTask(convId, task.id)
       .catch((err: unknown) => {
-        if (err instanceof ApiRequestError && err.status === 409) setError('Sub không còn chạy — có thể đã hoàn tất.');
-        else setError('Huỷ sub thất bại.');
+        if (err instanceof ApiRequestError && err.status === 409) {
+          setError('Nội dung này đã hoàn tất hoặc không còn có thể dừng.');
+        } else {
+          setError('Chưa thể dừng xử lý. Vui lòng thử lại.');
+        }
       })
       .finally(() => setCancelling(false));
   };
@@ -92,12 +96,12 @@ export function SubAgentView({ task, liveTrace, convId, onBack }: Props) {
       <div className="sav__head">
         <button type="button" className="sav__back" onClick={onBack} aria-label="Quay lại">←</button>
         <div className="sav__head-main">
-          <div className="sav__title">SUB {roleLabel(task.role)}</div>
+          <div className="sav__title">{roleLabel(task.role)}</div>
           <div className={`sav__status ${meta.cls}`}>{meta.label}</div>
         </div>
         {running && (
           <button type="button" className="btn btn--danger sav__cancel" onClick={cancel} disabled={cancelling} data-testid="sub-cancel">
-            {cancelling ? 'Đang huỷ…' : '✕ Huỷ sub'}
+            {cancelling ? 'Đang dừng…' : 'Dừng xử lý'}
           </button>
         )}
       </div>
@@ -106,27 +110,25 @@ export function SubAgentView({ task, liveTrace, convId, onBack }: Props) {
         <div className="sav__section">
           <div className="sav__label">NHIỆM VỤ</div>
           <div className="sav__brief">{task.title}</div>
-          {task.input && <pre className="sav__input">{summarizeInput(task.input)}</pre>}
         </div>
 
         {error && <div className="sav__error" role="alert">{error}</div>}
 
         <div className="sav__section">
-          <div className="sav__label">DIỄN TIẾN ({trace.length})</div>
+          <div className="sav__label">NHẬT KÝ XỬ LÝ ({trace.length})</div>
           {trace.length === 0 ? (
-            <div className="sav__empty">Chưa có hoạt động — sub {running ? 'đang khởi động' : 'không ghi trace'}.</div>
+            <div className="sav__empty">
+              {running ? 'Bộ phận đang tiếp nhận nội dung.' : 'Chưa có cập nhật xử lý.'}
+            </div>
           ) : (
             <div className="sav__trace">
               {trace.map((it, i) => (
                 <div key={`${it.id}-${i}`} className={`sav__row sav__row--${it.kind}`}>
                   <span className="sav__row-icon" aria-hidden="true">{it.kind === 'thinking' ? '🧠' : '🔧'}</span>
                   {it.kind === 'thinking' ? (
-                    <span className="sav__row-text">{it.text}</span>
+                    <span className="sav__row-text">Đang phân tích thông tin hồ sơ</span>
                   ) : (
-                    <>
-                      <code className="sav__row-tool">{it.tool}</code>
-                      {it.summary && <span className="sav__row-text">{it.summary}</span>}
-                    </>
+                    <span className="sav__row-tool">{activityLabel(it.tool)}</span>
                   )}
                 </div>
               ))}

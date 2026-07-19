@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.auth.deps import require_user
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.orch import registry, store
 
@@ -27,7 +27,11 @@ class InterruptBody(BaseModel):
 
 
 @router.post("/{conv_id}/interrupt")
-async def interrupt(conv_id: str, body: InterruptBody, claims: dict = Depends(require_user)) -> dict[str, Any]:
+async def interrupt(
+    conv_id: str,
+    body: InterruptBody,
+    claims: dict = Depends(require_permission("cases.review")),
+) -> dict[str, Any]:
     """Huỷ 1 sub đang chạy. target = task_id. 200 {cancelled:true} NGAY (fire).
 
     404 task không tồn tại / không thuộc conv · 409 đã xong hoặc không còn chạy (double-cancel).

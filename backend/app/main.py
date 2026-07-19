@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.access import router as access_router
 from app.api.approvals import router as approvals_router
 from app.api.audit import router as audit_router
 from app.api.compare import router as compare_router
@@ -57,6 +58,7 @@ app = FastAPI(title="SHB Digital Expert Guild", lifespan=lifespan)
 register_error_handler(app)  # ApiError + validation → body 4-field trần (CONTRACT §0)
 app.include_router(auth_router)
 app.include_router(me_router)  # /api/me (D-56 persona — Export FE T8-2)
+app.include_router(access_router)  # tenant-local users + role permission matrix
 app.include_router(conversations_router)  # conversations + chat (T1-3)
 app.include_router(sse_router)  # SSE stream (T1-3)
 app.include_router(approvals_router)  # approvals decide + list (T3-2)

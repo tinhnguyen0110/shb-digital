@@ -85,6 +85,36 @@
   border-color: var(--dim);
 }
 
+.ws__mode-btn,
+.ws__tower-btn {
+  align-items: center;
+  gap: 6px;
+}
+
+.ws__mode-btn {
+  color: var(--acc);
+  border-color: color-mix(in srgb, var(--acc) 40%, var(--bd2));
+  background: var(--acc-bg);
+}
+
+.ws__theme-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  color: var(--dim);
+  background: var(--p1);
+  cursor: pointer;
+}
+
+.ws__theme-btn:hover {
+  color: var(--acc);
+  border-color: var(--acc);
+}
+
 /* ── body: 3 panel ── */
 .ws__body {
   display: flex;
@@ -246,7 +276,7 @@
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: radial-gradient(70% 55% at 50% 78%, rgba(217, 119, 87, 0.05), transparent), var(--bg);
+  background: radial-gradient(70% 55% at 50% 78%, var(--acc-bg), transparent), var(--bg);
 }
 .ws__canvas-placeholder {
   text-align: center;

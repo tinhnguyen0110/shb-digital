@@ -18,6 +18,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from app.integrations.third_party_mock import cic_k11_normalized, mock_source
+
 MAX_LIMIT = 20
 
 
@@ -58,15 +60,29 @@ def _one(conn: sqlite3.Connection, sql: str, args: tuple) -> dict | None:
 
 
 def credit_cic_get(conn: sqlite3.Connection, owner_id: str) -> dict[str, Any]:
+    as_of = _now()
+    source = mock_source("cic", owner_id, record_as_of=as_of)
     rec = _one(conn, "SELECT owner_id, cic_group, history_note FROM cic_records WHERE owner_id=?", (owner_id,))
     if not rec:
-        return {"found": False, "asOf": _now(),
+        return {"found": False, "isMock": True, "source": source, "asOf": as_of,
                 "hint": f"Không có bản ghi CIC cho '{owner_id}' — coi như chưa có lịch sử tín dụng (nhóm 1 mặc định KHÔNG áp dụng, phải nói rõ 'chưa có bản ghi')."}
     g = rec["cic_group"]
-    hint = ("CIC nhóm 1 — lịch sử tốt." if g == 1 else
-            f"CIC nhóm {g} — {'CẢNH BÁO nợ cần chú ý' if g == 2 else 'NỢ XẤU, theo chính sách thường TỪ CHỐI vay mới'}."
-            + " Đưa thông tin này vào thẩm định, không bỏ qua.")
-    return {"found": True, "item": rec, "asOf": _now(), "hint": hint}
+    hint = (
+        "CIC MOCK nhóm 1 — tình huống mô phỏng lịch sử tốt."
+        if g == 1
+        else f"CIC MOCK nhóm {g} — "
+        f"{'CẢNH BÁO nợ cần chú ý' if g == 2 else 'NỢ XẤU, theo chính sách thường TỪ CHỐI vay mới'}."
+        + " Đây là fixture mô phỏng; đưa vào thẩm định demo nhưng không trình bày như dữ liệu CIC thật."
+    )
+    report = cic_k11_normalized(owner_id, g, rec["history_note"], record_as_of=as_of)
+    return {
+        "found": True,
+        "isMock": True,
+        "source": source,
+        "item": {**rec, "normalizedReport": report},
+        "asOf": as_of,
+        "hint": hint,
+    }
 
 
 def credit_assess(conn: sqlite3.Connection, owner_id: str, loan_amount_vnd: float = 0,
@@ -181,8 +197,10 @@ def credit_assess(conn: sqlite3.Connection, owner_id: str, loan_amount_vnd: floa
                "ineligible" if reasons else
                "eligible" if loan_amount_vnd > 0 else "info_only")
 
+    cic_source = mock_source("cic", owner_id, record_as_of=_now())
     return {
         "found": True, "asOf": _now(),
+        "dataSources": {"cic": cic_source},
         "item": {
             "ownerId": owner_id, "kind": kind, "name": ent["name"], "verdict": verdict,
             "metrics": {"dscr": dscr, "ltv": ltv, "cicGroup": cic_group,
@@ -315,7 +333,8 @@ SCHEMAS: dict[str, Any] = {
                             "desc": "kỳ hạn tháng — bỏ trống dùng chuẩn theo loại (consumer 60 / secured 180)"},
         }},
     "credit_cic_get": {
-        "mô tả": ("Tra cứu CIC (lịch sử tín dụng) MỘT khách/DN: nhóm nợ 1-5 + ghi chú. Nhóm ≥3 = nợ xấu."
+        "mô tả": ("Tra cứu CIC MOCK (lịch sử tín dụng mô phỏng) MỘT khách/DN: nhóm nợ 1-5 + ghi chú."
+                  " Nhóm ≥3 = nợ xấu."
                   " Không có bản ghi → nói rõ 'chưa có bản ghi', KHÔNG suy đoán nhóm. Read-only."),
         "params": {"owner_id": {"type": "str", "required": True, "desc": "id khách/DN"}}},
 }

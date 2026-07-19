@@ -12,13 +12,30 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Index, Integer, String, Text, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    region: Mapped[str] = mapped_column(Text, unique=True)
+    display_name: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+
+
+class TenantRolePermission(Base):
+    __tablename__ = "tenant_role_permissions"
+
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(Text, primary_key=True)
+    permissions: Mapped[list[str]] = mapped_column(JSONB)
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +158,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(String, unique=True)
     pass_hash: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text)  # 'user' | 'admin'
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"), server_default="shb-north")
+    display_name: Mapped[str] = mapped_column(Text, server_default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    activation_required: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
 
 class Conversation(Base):
@@ -151,6 +172,7 @@ class Conversation(Base):
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), default=uuid.uuid4
     )
     user_id: Mapped[str | None] = mapped_column(Text)
+    tenant_id: Mapped[str] = mapped_column(Text, ForeignKey("tenants.id"), server_default="shb-north")
     title: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(Text)
     sdk_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)

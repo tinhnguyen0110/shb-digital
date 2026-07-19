@@ -92,6 +92,21 @@ async def test_timeout_emits_exactly_one_event():
 
 
 @pytest.mark.asyncio
+async def test_watchdog_enforces_timeout_when_runner_hangs(monkeypatch):
+    """Runner thật không cần tự biết IdleTimeout: VỎ phải cưỡng chế trần bằng wait_for."""
+    events = await _collect_events()
+    monkeypatch.setattr(sub_runner, "SUB_TIMEOUT_S", 0.01)
+
+    async def runner_hang(task):
+        await asyncio.sleep(10)
+
+    await asyncio.wait_for(sub_runner._run_sub(_fake_task(), runner=runner_hang), timeout=0.5)
+    assert len(events) == 1
+    assert events[0][1]["outcome"] == "timeout"
+    assert "quá thời gian tổng 0.01s" in events[0][1]["result_summary"]
+
+
+@pytest.mark.asyncio
 async def test_cancel_emits_exactly_one_event_not_swallowed():
     """CancelledError (BaseException) → gán outcome + re-raise; finally shield _report.
     Ca THEN CHỐT: thiếu shield → 0 event → phòng treo."""

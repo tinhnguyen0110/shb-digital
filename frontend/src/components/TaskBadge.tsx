@@ -4,10 +4,10 @@ import { roleLabel } from '../roles';
 import './TaskBadge.css';
 
 const STATUS_TONE: Record<OrchTask['status'], { cls: string; label: string }> = {
-  queued: { cls: 'task-badge--idle', label: 'chờ' },
-  running: { cls: 'task-badge--run', label: 'đang làm…' },
-  done: { cls: 'task-badge--pass', label: '✓ xong' },
-  failed: { cls: 'task-badge--fail', label: '✗ lỗi' },
+  queued: { cls: 'task-badge--idle', label: 'chờ tiếp nhận' },
+  running: { cls: 'task-badge--run', label: 'đang xử lý…' },
+  done: { cls: 'task-badge--pass', label: '✓ hoàn tất' },
+  failed: { cls: 'task-badge--fail', label: '✗ cần kiểm tra' },
 };
 
 export function TaskBadge({ task }: { task: OrchTask }) {

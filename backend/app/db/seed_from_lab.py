@@ -1,4 +1,6 @@
-"""Load seed VALUES từ SQLite LAB sang PG (DECISIONS D-21 — load-values, KHÔNG bịa số).
+"""Load synthetic demo fixtures từ SQLite LAB sang PG.
+
+CIC/C06/BHXH projections are MOCK data only. They never authorize or invoke a live provider.
 Nguồn: ../shb-digital-experts/missions/shb-132/seed/shb-132.db (READ-ONLY, D-08).
 Chạy SAU migration: `uv run python -m app.db.seed_from_lab`.
 
@@ -7,6 +9,7 @@ Idempotent: TRUNCATE rồi INSERT — chạy lại nhiều lần vẫn ra đúng
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -39,6 +42,9 @@ TABLES: list[tuple[str, list[str]]] = [
                             "verified_income_vnd", "status", "verified_at"]),
 ]
 
+MOCK_THIRD_PARTY_TABLES = frozenset({"cic_records", "police_records", "employment_records"})
+_SYNTHETIC_OWNER_ID = re.compile(r"^[CB]\d{3}$")
+
 
 def _is_numeric(value: object) -> bool:
     """True nếu `value` parse được float — dùng lọc assumptions (D-28)."""
@@ -64,6 +70,14 @@ def _filter_rows(table: str, cols: list[str], rows: list) -> list:
     mount (products/ops) để giữ scope gọn. Sau D-58 (credit._assumptions re-sync LAB
     graceful-skip), string key KHÔNG còn làm credit_assess crash — nạp legal key an toàn.
     """
+    if table in MOCK_THIRD_PARTY_TABLES:
+        owner_pos = cols.index("owner_id")
+        invalid = [r[owner_pos] for r in rows if not _SYNTHETIC_OWNER_ID.fullmatch(str(r[owner_pos]))]
+        if invalid:
+            raise ValueError(
+                f"{table} contains non-synthetic owner ids: {invalid[:3]}; "
+                "third-party fixtures must use C###/B### demo ids"
+            )
     if table == "assumptions":
         vcol = cols[cols.index("value")]
         kcol = cols[cols.index("key")]

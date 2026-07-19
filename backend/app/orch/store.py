@@ -213,17 +213,21 @@ def _cleanup_orphans_sync(boot_time: datetime | None = None) -> int:
 
 # ── Conversation + Message (T1-3: render + persist) ─────────────────────────
 def _create_conversation_sync(
-    user_id: str, title: str, provider: str | None = None, model: str | None = None
+    user_id: str,
+    title: str,
+    provider: str | None = None,
+    model: str | None = None,
+    tenant_id: str = "shb-north",
 ) -> dict[str, Any]:
     """D-45b (c): lưu provider/model per-conv (null → server-default lúc chạy). Resume-consistency."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "INSERT INTO conversations (user_id, title, status, provider, model, created_at) "
-                "VALUES (%s, %s, 'idle', %s, %s, now()) "
-                "RETURNING id, user_id, title, status, sdk_session_id, provider, model, created_at",
-                (user_id, title, provider or None, model or None),
+                "INSERT INTO conversations (user_id, tenant_id, title, status, provider, model, created_at) "
+                "VALUES (%s, %s, %s, 'idle', %s, %s, now()) "
+                "RETURNING id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at",
+                (user_id, tenant_id, title, provider or None, model or None),
             )
             row = cur.fetchone()
         conn.commit()
@@ -236,6 +240,7 @@ def _conv_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
         "user_id": row.get("user_id"),
+        "tenant_id": row.get("tenant_id"),
         "title": row.get("title"),
         "status": row.get("status"),
         "sdk_session_id": row.get("sdk_session_id"),
@@ -250,7 +255,7 @@ def _get_conversation_sync(conv_id: str) -> dict[str, Any] | None:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, user_id, title, status, sdk_session_id, provider, model, created_at "
+                "SELECT id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at "
                 "FROM conversations WHERE id::text=%s",
                 (conv_id,),
             )
@@ -265,7 +270,7 @@ def _list_conversations_sync(user_id: str) -> list[dict[str, Any]]:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, user_id, title, status, sdk_session_id, provider, model, created_at "
+                "SELECT id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at "
                 "FROM conversations WHERE user_id=%s ORDER BY created_at DESC",
                 (user_id,),
             )
@@ -280,9 +285,30 @@ def _list_all_conversations_sync() -> list[dict[str, Any]]:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, user_id, title, status, sdk_session_id, provider, model, created_at "
+                "SELECT id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at "
                 "FROM conversations ORDER BY created_at DESC"
             )
+            return [_conv_to_dict(dict(r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _list_tenant_conversations_sync(tenant_id: str, owner_username: str | None = None) -> list[dict[str, Any]]:
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if owner_username:
+                cur.execute(
+                    "SELECT id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at "
+                    "FROM conversations WHERE tenant_id=%s AND user_id=%s ORDER BY created_at DESC",
+                    (tenant_id, owner_username),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, user_id, tenant_id, title, status, sdk_session_id, provider, model, created_at "
+                    "FROM conversations WHERE tenant_id=%s ORDER BY created_at DESC",
+                    (tenant_id,),
+                )
             return [_conv_to_dict(dict(r)) for r in cur.fetchall()]
     finally:
         conn.close()
@@ -405,9 +431,13 @@ async def create_task(conv_id: str, role: str, title: str, brief: str) -> Task:
 
 
 async def create_conversation(
-    user_id: str, title: str, provider: str | None = None, model: str | None = None
+    user_id: str,
+    title: str,
+    provider: str | None = None,
+    model: str | None = None,
+    tenant_id: str = "shb-north",
 ) -> dict[str, Any]:
-    return await asyncio.to_thread(_create_conversation_sync, user_id, title, provider, model)
+    return await asyncio.to_thread(_create_conversation_sync, user_id, title, provider, model, tenant_id)
 
 
 async def get_conversation(conv_id: str) -> dict[str, Any] | None:
@@ -421,6 +451,12 @@ async def list_conversations(user_id: str) -> list[dict[str, Any]]:
 async def list_all_conversations() -> list[dict[str, Any]]:
     """D-56 admin: mọi ca (không scope user_id)."""
     return await asyncio.to_thread(_list_all_conversations_sync)
+
+
+async def list_tenant_conversations(
+    tenant_id: str, owner_username: str | None = None
+) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(_list_tenant_conversations_sync, tenant_id, owner_username)
 
 
 async def set_conv_status(conv_id: str, status: str) -> None:

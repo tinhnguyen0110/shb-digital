@@ -21,19 +21,23 @@ Ráp mock→thật xong. Auth seam (architect cảnh báo) ĐÃ LỘ + ĐÓNG:
   (chưa login→Login, login→Workspace) + `Workspace.tsx` (tách từ App, nhận user + onAuthExpired 401→logout).
   `client.ts login()` POST /api/auth/login → server set cookie httponly `shb_token` → mọi call sau +
   EventSource `withCredentials` authenticated. `mock.login()` = accept mọi cred (mock không auth).
-- **Verified API thật**: login (user/user) → Workspace → ca "Probe ca DSCR" full-state render **DSCR=3.709
+- **Verified API thật**: login (staff/staff) → Khu vực xử lý hồ sơ → hồ sơ "Probe ca DSCR" full-state render **DSCR=3.709
   THẬT** + nguồn credit_assess + badge credit done (Chrome). SSE live: chat POST 202 → chat.delta seq
   per-turn + task.created credit + conversation.status, shape khớp CONTRACT (curl verify).
 - **Deviation S1**: F5 reload mất user-state (cookie httponly FE không đọc được) → về Login. Chấp nhận
   S1; mở rộng = gọi /me lúc mount nếu backend thêm endpoint.
 
-## 1. Bật API thật (1 dòng)
+## 1. Chọn API thật hoặc mock
 ```bash
-# frontend/.env  (hoặc export trước npm run dev)
-VITE_USE_MOCK_API=false
+# Demo độc lập, mặc định dùng dữ liệu mock:
+npm run dev
+
+# Dev có backend thật đang chạy ở cổng 8000:
+npm run dev:api
 ```
-- Cờ đọc ở `src/api/index.ts`: `USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false'`.
-  Mặc định (không set) = **mock BẬT**. Chỉ `=false` mới sang thật.
+- Cờ đọc ở `src/api/index.ts`. Mọi development server không đặt cờ = **mock**;
+  `npm run dev:api` và production build = **API thật**.
+- Vitest mặc định dùng mock để test UI độc lập backend.
 - Badge "● MOCK API" trên topbar (App.tsx) TỰ TẮT khi cờ false → dấu hiệu mắt-thường đã swap.
 - Vite proxy `/api` → `http://localhost:8000` (vite.config.ts). Backend cổng khác → set
   `VITE_API_PROXY_TARGET=http://host:port`.

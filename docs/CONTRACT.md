@@ -20,15 +20,40 @@
 
 ## 1. Auth (SPEC §11 · D-19)
 
-2 account seed: `user` (RM) · `admin` (quản lý/compliance). JWT.
+JWT xác thực tài khoản nội bộ. `tenant_id`, vùng và quyền hiệu lực luôn được backend nạp lại
+từ database; client không được tự chọn tenant.
 
 | Method | Path | Body | Trả (success) |
 |---|---|---|---|
-| POST | `/api/auth/login` | `{username, password}` | `{token, user: {username, role}}` — role ∈ `user`\|`admin` |
+| POST | `/api/auth/login` | `{username, password}` | `{token, user: {username, role, name, display_name, tenant_id, tenant, region, permissions[]}}` |
+| GET | `/api/auth/me` | — | Cùng hồ sơ user hiện hành; có thêm các field tenant/quyền ở top-level để tương thích |
 
 - JWT qua **cookie** (`withCredentials`) — vì `EventSource` không set custom header (streaming-sse.md §4).
   (S1 có thể bypass auth tạm nếu chưa xong — ghi deviation; nhưng endpoint login + 2 account seed là scope T1-1.)
 - 401 khi sai credential / thiếu token → body 4-field `{code:"unauthorized", ...}`.
+- 401 khi user hoặc tenant đã bị khóa, kể cả JWT còn hạn.
+
+Account demo: `staff`/`admin` (Miền Bắc), `staff_central`/`admin_central` (Miền Trung),
+`staff_south`/`admin_south` (Miền Nam). Password demo mặc định trùng username và phải đổi qua
+biến môi trường ngoài môi trường demo.
+
+### 1b. Quản trị truy cập trong tenant
+
+| Method | Path | Permission | Ghi chú |
+|---|---|---|---|
+| GET | `/api/access/users` | `users.read` | Chỉ Quản lý; user nội bộ trong tenant hiện tại |
+| POST | `/api/access/users` | `users.create` | Chỉ Quản lý; body `{username, display_name, role:"user"}`; backend tự ép tenant, tạo inactive, trả `activation_required:true` |
+| PATCH | `/api/access/users/{id}` | `users.manage` | Chỉ Quản lý; body `{active?, display_name?}`; không tự khóa, không bật account đang chờ kích hoạt, không khóa Quản lý cuối cùng |
+| GET | `/api/access/roles` | `roles.read` | Ma trận quyền `user`/`admin` của tenant hiện tại |
+| PUT | `/api/access/roles/user` | `roles.manage` | Chỉ nhận permission trong vocabulary backend; role admin là baseline được bảo vệ |
+
+Các permission quản trị user/role là baseline chỉ dành cho Quản lý và không thể gán cho vai
+trò Nhân viên tín dụng. User response có cả `active` và alias tương thích `is_active`, cùng
+`activation_required`, `tenant_id`, `tenant_name`, `region`. Role response có `label` tiếng Việt.
+
+POST user không nhận password và không gửi lời mời. Backend lưu một secret ngẫu nhiên không
+được lộ, account chưa thể đăng nhập. Kênh chuyển lời mời và endpoint kích hoạt/đặt mật khẩu là
+integration còn thiếu trước production.
 
 ## 2. Conversations + Chat (SPEC §11)
 

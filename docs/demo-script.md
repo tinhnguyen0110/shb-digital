@@ -55,8 +55,9 @@ pain người ra đề):**
   (⚠️ PHẢI đủ: mục đích MUA NHÀ Ở — `residential_purchase` not_restricted → green; nói
   "mở rộng kinh doanh" là dính `business_expansion` conditional → YELLOW → mất cảnh tự duyệt.
   Rehearsal 18/7 vấp đúng chỗ này. + "tín chấp" để Legal khỏi dừng hỏi loại vay/tài sản.)
-- CHỈ khối Diễn tiến: Pháp chế chạy **3 TRỤ THẬT** — 🔧 `legal_check_police` (nhân thân + tiền
-  án cổng Bộ Công an) → CIC → `legal_verify_employment` (lương xác minh vs kê khai) →
+- CHỈ khối Diễn tiến: Pháp chế chạy **3 TRỤ MOCK CÓ CONTRACT** — 🔧 `legal_check_police`
+  (C06 mock: nhân thân + tình huống tiền án tổng hợp) → CIC mock → `legal_verify_employment`
+  (BHXH mock: mức đóng/quá trình tham gia so với kê khai) →
   `legal_classify_profile` **GHI BIÊN BẢN vào sổ thẩm định** — "server chấm lane, agent không
   được tự phán xanh/đỏ."
 - Kết quả: **hồ sơ XANH**. Gõ tiếp: **"Giải ngân khoản vay L108 số tiền 594 triệu."** — *594tr

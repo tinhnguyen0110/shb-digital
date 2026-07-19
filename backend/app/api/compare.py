@@ -14,18 +14,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextvars import ContextVar
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.auth.deps import require_admin
+from app.auth.permissions import require_permission
 from app.errors import ApiError
 from app.orch import room, store, store_audit
 
 log = logging.getLogger("api.compare")
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
+_tenant_context: ContextVar[str] = ContextVar("compare_tenant")
 
 _MULTI_TIMEOUT_S = 120.0
 _SINGLE_TIMEOUT_S = 60.0  # single thực đo 11-13s — 60 trần rộng. SDK treo câm → wait_for cắt (chống
@@ -99,7 +101,8 @@ async def _run_multi(question: str) -> dict[str, Any]:
 
     Timeout → partial {timeout:true, conv_id}. Câu giải ngân → waiting_approval = trả trạng thái đó.
     """
-    conv = await store.create_conversation("compare", "compare-run")
+    tenant_id = _tenant_context.get()
+    conv = await store.create_conversation("compare", "compare-run", tenant_id=tenant_id)
     conv_id = conv["id"]
     t0 = time.monotonic()
     await store.add_message(conv_id, "user", question)
@@ -126,7 +129,7 @@ async def _run_multi(question: str) -> dict[str, Any]:
                 break
     duration = round(time.monotonic() - t0, 2)
 
-    tool_calls = await store_audit.query_tool_calls({"conv_id": conv_id}, limit=1000)
+    tool_calls = await store_audit.query_tool_calls({"conv_id": conv_id}, limit=1000, tenant_id=tenant_id)
     cards = await store.list_cards(conv_id)
     if not settled:
         # timeout — partial (single vẫn trả). conv_id để FE xem ca dở.
@@ -153,7 +156,10 @@ async def _run_multi(question: str) -> dict[str, Any]:
 
 
 @router.post("")
-async def compare(body: CompareBody, claims: dict = Depends(require_admin)) -> dict[str, Any]:
+async def compare(
+    body: CompareBody,
+    claims: dict = Depends(require_permission("monitoring.read")),
+) -> dict[str, Any]:
     """So sánh single (nhẩm chay) vs multi (có nguồn). 2 nhánh SONG SONG. Partial khi multi lỗi/timeout."""
     question = (body.question or "").strip()
     if not question:
@@ -164,7 +170,15 @@ async def compare(body: CompareBody, claims: dict = Depends(require_admin)) -> d
     # (không raise) → try/except vô dụng → gather khoá response VÔ HẠN (dù multi xong). wait_for →
     # TimeoutError raise → return_exceptions map → single partial. (multi có poll-timeout 120s nội bộ.)
     single_task = asyncio.wait_for(_run_single(question), timeout=_SINGLE_TIMEOUT_S)
-    single_r, multi_r = await asyncio.gather(single_task, _run_multi(question), return_exceptions=True)
+    tenant_token = _tenant_context.set(claims["tenant_id"])
+    try:
+        single_r, multi_r = await asyncio.gather(
+            single_task,
+            _run_multi(question),
+            return_exceptions=True,
+        )
+    finally:
+        _tenant_context.reset(tenant_token)
     if isinstance(single_r, Exception):
         # timeout (SDK treo) HOẶC lỗi khác → single partial, 2 cột vẫn render (đối xứng multi-partial).
         single = {"text": "single-agent không phản hồi (timeout)", "timeout": True, "duration_s": _SINGLE_TIMEOUT_S}

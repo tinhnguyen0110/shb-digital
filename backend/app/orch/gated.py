@@ -31,6 +31,7 @@ import psycopg2.extras
 
 from app.db.config import DATABASE_URL
 from app.orch import registry
+from app.orch.tool_scope import customer_tool_scope_error
 from app.orch.verdict import disburse_decision
 
 log = logging.getLogger("orch.gated")
@@ -109,6 +110,11 @@ def _gated_txn(action: str, conv_id: str, task_id: str | None, args: dict[str, A
     ph = payload_hash(action, args)
     conn = psycopg2.connect(DATABASE_URL)  # conn RIÊNG (mirror store/D-34 — KHÔNG mount pool adapter)
     try:
+        scope_error = customer_tool_scope_error(conn, conv_id, action, args)
+        if scope_error is not None:
+            conn.rollback()
+            return _GatedResult(scope_error)
+
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             # SERIALIZE per-key (architect phán quyết — chống race phiếu-rác): 2 gọi đồng thời cùng
             # (conv_id, action, ph) → con thua CHỜ con thắng commit → thấy used/pending đã commit →

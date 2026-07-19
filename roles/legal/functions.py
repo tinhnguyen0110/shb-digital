@@ -21,6 +21,12 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from app.integrations.third_party_mock import (
+    bhxh_participation_normalized,
+    c06_identity_normalized,
+    mock_source,
+)
+
 from roles.credit.functions import _assumptions, credit_assess
 
 
@@ -126,7 +132,7 @@ def legal_check_compliance(conn: sqlite3.Connection, owner_id: str, purpose_code
                      "không tự quyết duyệt/không (điều phối tổng hợp).")}
 
 
-# ── 3 TRỤ PHÊ DUYỆT (mentor-1807): ①công an ②CIC (credit_cic_get sẵn) ③lương xác minh ──
+# ── 3 TRỤ PHÊ DUYỆT MOCK: ①C06 ②CIC (credit_cic_get) ③quá trình/mức đóng BHXH ──
 
 def _assumption_str(conn: sqlite3.Connection, key: str, default: str = "") -> str:
     r = _one(conn, "SELECT value FROM assumptions WHERE key=?", (key,))
@@ -149,16 +155,18 @@ def _owner_identity(conn: sqlite3.Connection, owner_id: str) -> dict | None:
 
 
 def legal_check_police(conn: sqlite3.Connection, owner_id: str) -> dict[str, Any]:
-    """Tra cổng BỘ CÔNG AN (mock) — 2 tầng: nhân thân khớp/lệch từng trường + tiền án/điều tra.
+    """C06 mock — 2 tầng: nhân thân khớp/lệch từng trường + tình huống tiền án/điều tra tổng hợp.
     Không bản ghi → honest null, KHÔNG suy đoán."""
+    as_of = _now()
+    source = mock_source("c06", owner_id, record_as_of=as_of)
     bank = _owner_identity(conn, owner_id)
     if not bank:
-        return {"found": False, "asOf": _now(),
+        return {"found": False, "isMock": True, "source": source, "asOf": as_of,
                 "hint": f"Không có owner '{owner_id}'. Lấy id: cust_search(q=...)."}
     rec = _one(conn, "SELECT owner_id, id_number, full_name, address, criminal_status, record_type, "
                      "record_year, notes FROM police_records WHERE owner_id=?", (owner_id,))
     if not rec:
-        return {"found": False, "asOf": _now(),
+        return {"found": False, "isMock": True, "source": source, "asOf": as_of,
                 "hint": (f"Chưa tra được bản ghi công an cho '{owner_id}' — nói rõ 'chưa xác minh "
                          "được nhân thân/tiền án', KHÔNG suy đoán sạch hay không sạch.")}
 
@@ -188,51 +196,76 @@ def legal_check_police(conn: sqlite3.Connection, owner_id: str) -> dict[str, Any
                 flags.append(f"criminal_recent: tiền án {rec['record_type']} ({rec['record_year']}) "
                              f"CHƯA quá hạn {expiry} năm — thẩm định kỹ, không tự duyệt")
     return {
-        "found": True, "asOf": _now(),
+        "found": True, "isMock": True, "source": source, "asOf": as_of,
         "item": {"ownerId": owner_id, "identityMatch": not mismatches, "mismatches": mismatches,
                  "criminalStatus": crim, "recordType": rec["record_type"],
                  "recordYear": rec["record_year"], "notes": rec["notes"], "flags": flags,
+                 "normalizedIdentity": c06_identity_normalized(
+                     owner_id,
+                     identity_match=not mismatches,
+                     mismatches=mismatches,
+                     record_as_of=as_of,
+                 ),
                  "computedBy": "server"},
-        "hint": ("Kết quả đối chiếu do server tra — trích thẳng. Giấy tờ đủ/thiếu → legal_check_docs; "
+        "hint": ("Kết quả đối chiếu từ fixture C06 MOCK — phải ghi rõ là mô phỏng. "
+                 "Giấy tờ đủ/thiếu → legal_check_docs; "
                  "lịch sử tín dụng → credit_cic_get; chốt lane cuối → legal_classify_profile."),
     }
 
 
 def legal_verify_employment(conn: sqlite3.Connection, owner_id: str) -> dict[str, Any]:
-    """Xác minh việc làm + LƯƠNG THỰC (verified) vs kê khai — server tính chênh %.
-    KHÔNG tính DSCR (việc credit_assess) — lệch vượt ngưỡng thì BÁO điều phối đề nghị Credit tính lại."""
+    """BHXH mock: quá trình tham gia + mức lương đóng so với thu nhập kê khai.
+
+    Mức đóng BHXH không phải thu nhập thực nhận, nên chỉ dùng làm tín hiệu đối chiếu; không thay vào DSCR.
+    """
+    as_of = _now()
+    source = mock_source("bhxh", owner_id, record_as_of=as_of)
     bank = _owner_identity(conn, owner_id)
     if not bank:
-        return {"found": False, "asOf": _now(),
+        return {"found": False, "isMock": True, "source": source, "asOf": as_of,
                 "hint": f"Không có owner '{owner_id}'. Lấy id: cust_search(q=...)."}
     rec = _one(conn, "SELECT owner_id, employer, position, tenure_months, verified_income_vnd, "
                      "status, verified_at FROM employment_records WHERE owner_id=?", (owner_id,))
     if not rec:
-        return {"found": False, "asOf": _now(),
+        return {"found": False, "isMock": True, "source": source, "asOf": as_of,
                 "hint": (f"Chưa có bản ghi xác minh việc làm cho '{owner_id}' (DN thường không có) — "
                          "nói rõ 'chưa xác minh được thu nhập', KHÔNG coi kê khai là đã xác minh.")}
     declared = bank["declared_income"]
-    verified = float(rec["verified_income_vnd"] or 0)
-    mismatch_pct = round((declared - verified) / verified * 100, 1) if verified > 0 else None
+    contribution_salary = float(rec["verified_income_vnd"] or 0)  # legacy fixture column name
+    mismatch_pct = (
+        round((declared - contribution_salary) / contribution_salary * 100, 1)
+        if contribution_salary > 0
+        else None
+    )
     threshold = _assumptions(conn).get("income_mismatch_max_pct", 10)
     within = mismatch_pct is not None and abs(mismatch_pct) <= threshold
     flags: list[str] = []
     if rec["status"] == "expired":
         flags.append("employment_expired: xác nhận việc làm HẾT HIỆU LỰC — yêu cầu xác nhận mới")
     if mismatch_pct is not None and not within:
-        flags.append(f"income_mismatch: kê khai lệch {mismatch_pct:+}% so lương xác minh "
-                     f"(ngưỡng ±{threshold:g}%) — báo điều phối đề nghị Credit tính lại DSCR "
-                     "bằng verified_income")
+        flags.append(
+            f"income_mismatch: kê khai lệch {mismatch_pct:+}% so mức lương đóng BHXH mock "
+            f"(ngưỡng ±{threshold:g}%) — chuyển người xác minh thu nhập, không tự thay vào DSCR"
+        )
     return {
-        "found": True, "asOf": _now(),
+        "found": True, "isMock": True, "source": source, "asOf": as_of,
         "item": {"ownerId": owner_id, "employer": rec["employer"], "position": rec["position"],
                  "tenureMonths": rec["tenure_months"], "status": rec["status"],
-                 "declaredIncomeVnd": declared, "verifiedIncomeVnd": verified,
+                 "declaredIncomeVnd": declared, "contributionSalaryVnd": contribution_salary,
                  "mismatchPct": mismatch_pct, "withinThreshold": within, "flags": flags,
                  "verifiedAt": rec["verified_at"], "computedBy": "server",
+                 "normalizedParticipation": bhxh_participation_normalized(
+                     owner_id,
+                     employer=rec["employer"],
+                     tenure_months=rec["tenure_months"],
+                     contribution_salary_vnd=contribution_salary,
+                     status=rec["status"],
+                     verified_at=rec["verified_at"],
+                 ),
                  "assumptionsUsed": {"income_mismatch_max_pct": threshold}},
-        "hint": ("Chênh % do server tính — trích thẳng. Lệch vượt ngưỡng: KHÔNG tự tính lại DSCR, "
-                 "báo điều phối để Credit chạy lại. Chốt lane cuối → legal_classify_profile."),
+        "hint": ("Chênh % do server tính trên fixture BHXH. Mức đóng BHXH không phải thu nhập thực "
+                 "nhận; lệch vượt ngưỡng → chuyển người xác minh, KHÔNG tự thay vào DSCR. "
+                 "Chốt lane cuối → legal_classify_profile."),
     }
 
 
@@ -301,7 +334,7 @@ def legal_classify_profile(conn: sqlite3.Connection, owner_id: str, loan_amount_
         crit("employment", "yellow", "; ".join(emp["item"]["flags"]))
     else:
         crit("employment", "pass",
-             f"lương xác minh khớp kê khai (lệch {emp['item']['mismatchPct']}%)")
+             f"mức đóng BHXH mock gần thu nhập kê khai (lệch {emp['item']['mismatchPct']}%)")
 
     docs = legal_check_docs(conn, owner_id, loan_type=eff_type, collateral_id=collateral_id)
     if docs.get("code") == "collateral_owner_mismatch":
@@ -356,6 +389,11 @@ def legal_classify_profile(conn: sqlite3.Connection, owner_id: str, loan_amount_
 
     return {
         "found": True, "asOf": _now(),
+        "dataSources": {
+            "cic": mock_source("cic", owner_id),
+            "c06": mock_source("c06", owner_id),
+            "bhxh": mock_source("bhxh", owner_id),
+        },
         "item": {"assessmentId": cur.lastrowid, "ownerId": owner_id, "loanType": eff_type,
                  "loanAmountVnd": loan_amount_vnd, "lane": lane, "decision": decision,
                  "criteria": criteria, "basis": basis, "computedBy": "server",
@@ -414,20 +452,20 @@ SCHEMAS: dict[str, Any] = {
                              "desc": "mã mục đích vay, vd 'business_expansion'/'bds_speculation'"},
         }},
     "legal_check_police": {
-        "mô tả": ("TRA CỔNG BỘ CÔNG AN (mock) — 2 tầng trong 1 call: ①NHÂN THÂN bank-khai vs"
-                  " công-an-giữ, khớp/lệch TỪNG trường ②TIỀN ÁN/đang-điều-tra + loại án. KHÔNG check"
+        "mô tả": ("C06 MOCK — 2 tầng mô phỏng trong 1 call: ①NHÂN THÂN bank-khai vs fixture C06,"
+                  " khớp/lệch TỪNG trường ②TIỀN ÁN/đang-điều-tra + loại án. KHÔNG check"
                   " giấy tờ đủ/thiếu (legal_check_docs) · KHÔNG tra CIC (credit_cic_get) — 3 nguồn"
                   " bổ nhau. Không có bản ghi → nói rõ 'chưa xác minh được', cấm suy đoán. Read-only."),
         "params": {"owner_id": {"type": "str", "required": True, "desc": "id khách/DN, vd 'C013'"}}},
     "legal_verify_employment": {
-        "mô tả": ("XÁC MINH VIỆC LÀM + LƯƠNG THỰC: server so lương XÁC MINH vs KÊ KHAI → chênh % +"
-                  " cờ vượt ngưỡng. Lệch vượt ngưỡng → BÁO điều phối đề nghị Credit tính lại DSCR"
-                  " bằng verified_income — tool này KHÔNG tính DSCR (việc credit_assess). DN thường"
+        "mô tả": ("BHXH MOCK — quá trình tham gia + mức lương đóng BHXH mô phỏng so với KÊ KHAI →"
+                  " chênh % + cờ vượt ngưỡng. Mức đóng BHXH KHÔNG phải thu nhập thực nhận và không"
+                  " được tự thay vào DSCR — tool này KHÔNG tính DSCR (việc credit_assess). DN thường"
                   " không có bản ghi → nói rõ 'chưa xác minh'. Read-only."),
         "params": {"owner_id": {"type": "str", "required": True, "desc": "id khách/DN"}}},
     "legal_classify_profile": {
         "mô tả": ("⭐ CHỐT CUỐI thẩm định pháp lý — GỌI SAU CÙNG khi đã nắm ca (owner + số tiền):"
-                  " server tự chạy TRỌN 3 trụ (công an + CIC + lương) + giấy tờ + mục đích + tín dụng"
+                  " server tự chạy TRỌN 3 trụ MOCK (C06 + CIC + BHXH) + giấy tờ + mục đích + tín dụng"
                   " → LANE green/yellow/red + DECISION (auto_approve_eligible / human_review_required /"
                   " human_approval_required / reject_recommended) theo phân cấp thẩm quyền, và GHI SỔ"
                   " assessments (tool GHI DB duy nhất — không read-only, mỗi call thêm 1 bản ghi)."

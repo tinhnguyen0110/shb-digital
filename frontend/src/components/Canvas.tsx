@@ -7,6 +7,7 @@ import { CardRenderer } from './cards/CardRenderer';
 import type { DecideFn } from './cards/ApprovalPanel';
 import { TaskBadge } from './TaskBadge';
 import { Lobby3D, type LobbyStatus } from './Lobby3D';
+import { sourceLabel } from '../uiCopy';
 import './Canvas.css';
 
 // 4 phòng ban sub. Main không nằm trong grid sub (là điều phối).
@@ -18,6 +19,7 @@ interface Props {
   onDecide?: DecideFn;
   canDecide?: boolean; // D-56 — chỉ admin (ngân hàng) quyết phiếu; customer thấy "chờ ngân hàng"
   onSelectSub?: (taskId: string) => void; // click sub (live map/bảng việc) → mở SubAgentView (F2a)
+  showLobby?: boolean; // customer=false: không lộ sơ đồ agent/sub nội bộ, chỉ thấy sản phẩm hồ sơ
 }
 
 // trạng thái sub từ task mới nhất của role đó (running/done/failed) → dot màu.
@@ -31,8 +33,8 @@ function latestTaskOfRole(tasks: OrchTask[], role: string): OrchTask | undefined
   return tasks.filter((t) => t.role === role).at(-1);
 }
 
-export function Canvas({ cards, tasks, onDecide, canDecide, onSelectSub }: Props) {
-  const [tab, setTab] = useState<'lobby' | 'work'>('lobby');
+export function Canvas({ cards, tasks, onDecide, canDecide, onSelectSub, showLobby = true }: Props) {
+  const [tab, setTab] = useState<'lobby' | 'work'>(showLobby ? 'lobby' : 'work');
   // citation chip bấm — S2: hiện banner tên tool (tooltip đã có). Trace view mở tool-call = S4.
   const [cited, setCited] = useState<string | null>(null);
   const onCite = (_taskId: string | null, source: string) => setCited(source);
@@ -55,32 +57,34 @@ export function Canvas({ cards, tasks, onDecide, canDecide, onSelectSub }: Props
   return (
     <section className="canvas">
       <div className="canvas__tabs">
+        {showLobby && (
+          <button
+            type="button"
+            className={`canvas__tab${tab === 'lobby' ? ' canvas__tab--active' : ''}`}
+            onClick={() => setTab('lobby')}
+          >
+            Bộ phận phối hợp
+          </button>
+        )}
         <button
           type="button"
-          className={`canvas__tab${tab === 'lobby' ? ' canvas__tab--active' : ''}`}
-          onClick={() => setTab('lobby')}
-        >
-          🏛 Đội làm việc
-        </button>
-        <button
-          type="button"
-          className={`canvas__tab${tab === 'work' ? ' canvas__tab--active' : ''}`}
+          className={`canvas__tab${tab === 'work' || !showLobby ? ' canvas__tab--active' : ''}`}
           onClick={() => setTab('work')}
         >
-          ▦ Công việc{cards.length > 0 ? ` (${cards.length})` : ''}
+          {showLobby ? 'Kết quả thẩm định' : 'Kết quả hồ sơ'}{cards.length > 0 ? ` (${cards.length})` : ''}
         </button>
       </div>
 
-      {tab === 'lobby' ? (
+      {showLobby && tab === 'lobby' ? (
         <div className="canvas__lobby">
           {/* live map 3D — chi nhánh BANK (D-24 lobby-3D): click nhân vật → mở SubAgentView */}
-          <Lobby3D agents={agents} onSelect={handleSelectRole} />
+          <Lobby3D agents={agents} onSelect={onSelectSub ? handleSelectRole : undefined} />
 
           {/* bảng việc */}
           <div className="canvas__tasks">
-            <div className="canvas__tasks-label">BẢNG VIỆC</div>
+            <div className="canvas__tasks-label">NỘI DUNG ĐANG XỬ LÝ</div>
             {tasks.length === 0 ? (
-              <div className="canvas__tasks-empty">Chưa có việc nào được giao.</div>
+              <div className="canvas__tasks-empty">Chưa có nội dung cần phối hợp.</div>
             ) : (
               <div className="canvas__tasks-list">
                 {tasks.map((t) => (
@@ -105,13 +109,13 @@ export function Canvas({ cards, tasks, onDecide, canDecide, onSelectSub }: Props
         <div className="canvas__work" data-scroll>
           {cited && (
             <div className="canvas__cite-banner" role="status">
-              ⛬ Nguồn: <b>{cited}</b> — trace tool-call đầy đủ ở Sprint 4.
+              Nguồn tham chiếu: <b>{sourceLabel(cited)}</b>
               <button type="button" className="canvas__cite-close" onClick={() => setCited(null)} aria-label="Đóng">✕</button>
             </div>
           )}
           {cards.length === 0 ? (
             <div className="canvas__empty">
-              ▦ Sản phẩm công việc (chỉ số · điều kiện · tờ trình…) sẽ hiện ở đây khi đội trình bày.
+              Kết quả thẩm định, điều kiện và tài liệu liên quan sẽ hiển thị tại đây.
             </div>
           ) : (
             <div className="canvas__cards">

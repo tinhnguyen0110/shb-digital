@@ -4,12 +4,13 @@
 import { useState } from 'react';
 import type { TraceItem } from '../types';
 import { roleLabel } from '../roles';
+import { activityLabel } from '../uiCopy';
 import './TraceBlock.css';
 
 // task_id → tên actor. main (task_id null) = điều phối; task_id khác → role của task đó (nếu biết).
 function actorLabel(taskId: string | null, taskRole?: string): string {
-  if (taskId == null) return 'Main';
-  return taskRole ? roleLabel(taskRole) : 'Sub';
+  if (taskId == null) return 'Điều phối hồ sơ';
+  return taskRole ? roleLabel(taskRole) : 'Bộ phận nghiệp vụ';
 }
 
 interface Props {
@@ -22,8 +23,7 @@ export function TraceBlock({ items, taskRole }: Props) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null; // không trace → không hiện khối rỗng (defensive)
 
-  const nTool = items.filter((i) => i.kind === 'tool').length;
-  const nThink = items.filter((i) => i.kind === 'thinking').length;
+  const completedSteps = items.filter((i) => i.kind === 'tool').length;
 
   return (
     <div className="trace" data-testid="trace-block">
@@ -35,9 +35,8 @@ export function TraceBlock({ items, taskRole }: Props) {
       >
         <span className={`trace__caret${open ? ' trace__caret--open' : ''}`}>▸</span>
         <span className="trace__label">
-          Diễn tiến đội — {items.length} bước
-          {nTool > 0 && <span className="trace__count"> · 🔧 {nTool}</span>}
-          {nThink > 0 && <span className="trace__count"> · 🧠 {nThink}</span>}
+          Nhật ký xử lý — {items.length} cập nhật
+          {completedSteps > 0 && <span className="trace__count"> · {completedSteps} bước đã ghi nhận</span>}
         </span>
       </button>
 
@@ -52,7 +51,7 @@ export function TraceBlock({ items, taskRole }: Props) {
                 <div key={key} className="trace__row trace__row--think">
                   <span className="trace__icon" aria-hidden="true">🧠</span>
                   <span className="trace__actor">{actor}</span>
-                  <span className="trace__text trace__text--clamp">{it.text}</span>
+                  <span className="trace__text trace__text--clamp">Đang phân tích thông tin hồ sơ</span>
                 </div>
               );
             }
@@ -60,8 +59,7 @@ export function TraceBlock({ items, taskRole }: Props) {
               <div key={key} className="trace__row trace__row--tool">
                 <span className="trace__icon" aria-hidden="true">🔧</span>
                 <span className="trace__actor">{actor}</span>
-                <code className="trace__tool">{it.tool}</code>
-                {it.summary && <span className="trace__text trace__text--clamp">{it.summary}</span>}
+                <span className="trace__tool">{activityLabel(it.tool)}</span>
               </div>
             );
           })}

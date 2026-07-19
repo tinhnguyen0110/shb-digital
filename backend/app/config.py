@@ -29,5 +29,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
 # (an toàn — phải bật tường minh qua env). PROD/demo thật KHÔNG set. Boot log cảnh báo khi ON.
 DEV_SKIP_AUTH = _env_bool("DEV_SKIP_AUTH", default=False)
 
+# Local HTTP keeps this off. Every HTTPS deployment must set it on so the browser never sends
+# the session cookie over an unencrypted connection.
+AUTH_COOKIE_SECURE = _env_bool("AUTH_COOKIE_SECURE", default=False)
+
 # Claims admin seed trả thẳng khi DEV_SKIP_AUTH ON (không cần cookie/JWT). sub uuid lấy DB lúc dùng.
 DEV_ADMIN_CLAIMS = {"username": "admin", "role": "admin"}
+
+# External data policy for this phase: CIC/C06/BHXH are synthetic mocks only. Fail fast instead
+# of silently making a live call when an environment is misconfigured.
+THIRD_PARTY_MODE = os.environ.get("THIRD_PARTY_MODE", "mock").strip().lower()
+if THIRD_PARTY_MODE != "mock":
+    raise RuntimeError(
+        "THIRD_PARTY_MODE must be 'mock': live CIC/C06/BHXH connectors are intentionally unsupported"
+    )

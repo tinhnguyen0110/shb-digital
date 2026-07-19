@@ -86,22 +86,31 @@ def _record_sync(
         return None
 
 
-def _query_sync(filters: dict[str, str], limit: int) -> list[dict[str, Any]]:
+def _query_sync(filters: dict[str, str], limit: int, tenant_id: str | None = None) -> list[dict[str, Any]]:
     """Query tool_calls theo filter (whitelist cột). Mới nhất trước. limit cap."""
     where = []
     params: list[Any] = []
     for k, v in filters.items():
         if k in _AUDIT_FILTERS and v:
-            where.append(f"{k} = %s")
+            where.append(f"tc.{k} = %s")
             params.append(v)
+    if tenant_id:
+        where.append("c.tenant_id = %s")
+        params.append(tenant_id)
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     params.append(limit)
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            source = (
+                "tool_calls tc JOIN conversations c ON c.id::text=tc.conv_id"
+                if tenant_id
+                else "tool_calls tc"
+            )
             cur.execute(
-                f"SELECT id, task_id, conv_id, ts, actor, tool, input, output, cost FROM tool_calls "
-                f"{clause} ORDER BY ts DESC LIMIT %s",
+                f"SELECT tc.id, tc.task_id, tc.conv_id, tc.ts, tc.actor, tc.tool, "
+                f"tc.input, tc.output, tc.cost FROM {source} "
+                f"{clause} ORDER BY tc.ts DESC LIMIT %s",
                 tuple(params),
             )
             return [_row_to_dict(dict(r)) for r in cur.fetchall()]
@@ -123,6 +132,10 @@ async def record_tool_call(
     return await asyncio.to_thread(_record_sync, task_id, conv_id, actor, tool, tool_input, output, cost)
 
 
-async def query_tool_calls(filters: dict[str, str], limit: int = 200) -> list[dict[str, Any]]:
+async def query_tool_calls(
+    filters: dict[str, str],
+    limit: int = 200,
+    tenant_id: str | None = None,
+) -> list[dict[str, Any]]:
     """GET /api/audit — list tool_calls theo filter (whitelist cột)."""
-    return await asyncio.to_thread(_query_sync, filters, limit)
+    return await asyncio.to_thread(_query_sync, filters, limit, tenant_id)

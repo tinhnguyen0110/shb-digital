@@ -18,35 +18,34 @@ describe('TraceBlock', () => {
 
   it('mặc định THU GỌN — hiện tổng, không hiện dòng chi tiết', () => {
     render(<TraceBlock items={items} />);
-    expect(screen.getByText(/3 bước/)).toBeInTheDocument();
-    expect(screen.getByText(/🔧 2/)).toBeInTheDocument();
-    expect(screen.getByText(/🧠 1/)).toBeInTheDocument();
+    expect(screen.getByText(/3 cập nhật/)).toBeInTheDocument();
+    expect(screen.getByText(/2 bước đã ghi nhận/)).toBeInTheDocument();
     // chưa mở → chi tiết ẩn
-    expect(screen.queryByText('cân nhắc DSCR')).not.toBeInTheDocument();
-    expect(screen.queryByText('credit_assess')).not.toBeInTheDocument();
+    expect(screen.queryByText('Đang phân tích thông tin hồ sơ')).not.toBeInTheDocument();
+    expect(screen.queryByText('Đánh giá thông tin tín dụng')).not.toBeInTheDocument();
   });
 
   it('click mở → hiện dòng thinking + tool', () => {
     render(<TraceBlock items={items} />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByText('cân nhắc DSCR')).toBeInTheDocument();
-    expect(screen.getByText('orch_dispatch')).toBeInTheDocument();
-    expect(screen.getByText('credit_assess')).toBeInTheDocument();
+    expect(screen.getByText('Đang phân tích thông tin hồ sơ')).toBeInTheDocument();
+    expect(screen.getByText('Chuyển nội dung đến bộ phận phụ trách')).toBeInTheDocument();
+    expect(screen.getByText('Đánh giá thông tin tín dụng')).toBeInTheDocument();
   });
 
-  it('actor: task_id null → Main; có taskRole → tên role', () => {
+  it('actor: task_id null → điều phối; có taskRole → tên bộ phận', () => {
     render(<TraceBlock items={items} taskRole={(id) => (id === 't1' ? 'credit' : undefined)} />);
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getAllByText('Main').length).toBeGreaterThan(0); // thinking + orch_dispatch task_id null
-    expect(screen.getByText('Tín dụng')).toBeInTheDocument(); // credit_assess task t1
+    expect(screen.getAllByText('Điều phối hồ sơ').length).toBeGreaterThan(0);
+    expect(screen.getByText('Thẩm định tín dụng')).toBeInTheDocument();
   });
 
   it('toggle 2 lần → đóng lại', () => {
     render(<TraceBlock items={items} />);
     const btn = screen.getByRole('button');
     fireEvent.click(btn);
-    expect(screen.getByText('cân nhắc DSCR')).toBeInTheDocument();
+    expect(screen.getByText('Đang phân tích thông tin hồ sơ')).toBeInTheDocument();
     fireEvent.click(btn);
-    expect(screen.queryByText('cân nhắc DSCR')).not.toBeInTheDocument();
+    expect(screen.queryByText('Đang phân tích thông tin hồ sơ')).not.toBeInTheDocument();
   });
 });

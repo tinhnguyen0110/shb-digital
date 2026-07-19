@@ -10,6 +10,7 @@ xem task deviation), KHÔNG present tool (S3). Chỉ mount thô + envelope.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import inspect
 import json
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
-from claude_agent_sdk import create_sdk_mcp_server, tool
+from claude_agent_sdk import ToolAnnotations, create_sdk_mcp_server, tool
 from claude_agent_sdk.types import McpSdkServerConfig
 
 from app.mount.pg_adapter import PGConnAdapter, acquire, release
@@ -52,22 +53,15 @@ def _make_handler(
     known = set(inspect.signature(fn).parameters) - {"conn"}
     sig_hint = _sig_hint(schemas, name)
 
-    async def handler(args: dict[str, Any]) -> dict[str, Any]:
-        # PARAM LẠ → chặn ở cửa, KHÔNG lọc im (lab-joint §2 — param-nuốt)
-        unknown = set(args) - known
-        if unknown:
-            err = {
-                "code": "bad_param",
-                "message": f"param không tồn tại: {sorted(unknown)}",
-                "hint": f"Params hợp lệ: {sig_hint}. Sửa tên rồi gọi lại.",
-                "retryable": True,
-            }
-            return _text(err)
+    def run_sync(args: dict[str, Any], conv_id: str) -> dict[str, Any]:
+        """Toàn bộ psycopg2 + LAB function sync chạy ngoài event loop."""
+        from app.orch.tool_scope import customer_tool_scope_error
 
         pg_conn = acquire()
         adapter = PGConnAdapter(pg_conn)
         try:
-            result = fn(adapter, **args)
+            scope_error = customer_tool_scope_error(pg_conn, conv_id, name, args)
+            result = scope_error if scope_error is not None else fn(adapter, **args)
             pg_conn.commit()  # read-only trong S1 nhưng commit sạch transaction (tránh idle-in-tx)
         except psycopg2.Error as e:
             pg_conn.rollback()
@@ -99,6 +93,24 @@ def _make_handler(
             release(pg_conn)
         return _text(result)
 
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        # PARAM LẠ → chặn ở cửa, KHÔNG lọc im (lab-joint §2 — param-nuốt)
+        unknown = set(args) - known
+        if unknown:
+            err = {
+                "code": "bad_param",
+                "message": f"param không tồn tại: {sorted(unknown)}",
+                "hint": f"Params hợp lệ: {sig_hint}. Sửa tên rồi gọi lại.",
+                "retryable": True,
+            }
+            return _text(err)
+
+        # D-22: fn LAB + psycopg2 đều synchronous. Chạy trực tiếp ở async handler sẽ
+        # block SSE, room queue và mọi ca khác trong worker.
+        from app.orch import registry
+
+        return await asyncio.to_thread(run_sync, args, registry.CTX_CONV.get())
+
     return handler
 
 
@@ -123,7 +135,16 @@ def mount_role(role: str) -> tuple[str, McpSdkServerConfig, list[str]]:
         # SAME conn vào inner). Read tool giữ handler per-call (mount §2). CHỈ gated whitelist thread-tx.
         handler = gated(name, read_handler) if name in GATED_WHITELIST else read_handler
         input_schema = schema_to_input(mod.SCHEMAS[name].get("params", {}))
-        sdk_tools.append(tool(name=name, description=mod.SCHEMAS[name]["mô tả"], input_schema=input_schema)(handler))
+        raw_annotations = getattr(mod, "ANNOTATIONS", {}).get(name)
+        annotations = ToolAnnotations(**raw_annotations) if raw_annotations else None
+        sdk_tools.append(
+            tool(
+                name=name,
+                description=mod.SCHEMAS[name]["mô tả"],
+                input_schema=input_schema,
+                annotations=annotations,
+            )(handler)
+        )
 
     server = create_sdk_mcp_server(f"banking_{role}", version="1.0.0", tools=sdk_tools)
     allowed = [f"mcp__banking_{role}__{n}" for n in mod.REGISTRY]

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.auth.deps import require_user
 from app.auth.service import authenticate
-from app.config import AUTH_COOKIE, JWT_TTL_SECONDS
+from app.config import AUTH_COOKIE, AUTH_COOKIE_SECURE, JWT_TTL_SECONDS
 from app.errors import ApiError
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -34,13 +34,14 @@ def login(body: LoginBody, response: Response) -> dict:
             status_code=401,
             code="unauthorized",
             message="Sai tên đăng nhập hoặc mật khẩu.",
-            hint="Kiểm lại credential. 2 account demo: user / admin.",
+            hint="Kiểm lại thông tin đăng nhập. Tài khoản demo nội bộ: staff / admin.",
             retryable=True,
         )
     response.set_cookie(
         key=AUTH_COOKIE,
         value=result["token"],
         httponly=True,
+        secure=AUTH_COOKIE_SECURE,
         samesite="lax",
         max_age=JWT_TTL_SECONDS,
     )
@@ -48,12 +49,37 @@ def login(body: LoginBody, response: Response) -> dict:
     return result
 
 
+@router.post("/logout", status_code=204)
+def logout(response: Response) -> None:
+    """Xóa cookie phiên một cách idempotent; endpoint không yêu cầu phiên còn hợp lệ."""
+    response.delete_cookie(
+        key=AUTH_COOKIE,
+        httponly=True,
+        secure=AUTH_COOKIE_SECURE,
+        samesite="lax",
+    )
+
+
 def _me_payload(claims: dict) -> dict:
     """D-56: {username, role, owner_id} phẳng (Export FE T8-2) + `user` wrap (FE boot-check cũ, không
     phá). owner_id của REQUESTER (JOIN users by claims.sub). DEV_SKIP_AUTH → admin owner_id=None."""
-    owner_id = _owner_id_of(claims.get("sub"))
+    owner_id = claims.get("owner_id")
     username, role = claims.get("username"), claims.get("role")
-    return {"username": username, "role": role, "owner_id": owner_id, "user": {"username": username, "role": role}}
+    profile = {
+        "username": username,
+        "role": role,
+        "owner_id": owner_id,
+        "tenant_id": claims.get("tenant_id"),
+        "tenant": claims.get("tenant_id"),
+        "region": claims.get("region"),
+        "tenant_name": claims.get("tenant_name"),
+        "display_name": claims.get("display_name"),
+        "name": claims.get("display_name"),
+        "active": claims.get("active", True),
+        "is_active": claims.get("is_active", True),
+        "permissions": claims.get("permissions") or [],
+    }
+    return {**profile, "user": profile}
 
 
 @router.get("/me")

@@ -1,25 +1,24 @@
-// App.tsx — auth gate + boot-check (CONTRACT §1 · D-19 · D-39 skip-auth).
-// Boot: gọi GET /api/auth/me:
-//   · 200 {user} (đã login HOẶC DEV_SKIP_AUTH ON) → skip Login, vào thẳng Workspace (role từ /me).
-//   · 401 → Login flow (Login.tsx). Đăng xuất / 401 mid-session → về Login.
-// Cookie JWT httponly do server giữ; /me là đường FE biết "đã có phiên" qua reload (thay vì mất
-// state như trước). Mock mode: me() ném 401 → luôn hiện Login (test luồng Login).
-import { useEffect, useState } from 'react';
+// Cửa khách luôn công khai. /me chỉ dùng khôi phục phiên nội bộ staff/admin; 401 không được
+// chặn trải nghiệm khách vay. Cookie JWT httponly do server giữ trong chế độ full-stack.
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { conversationApi } from './api';
 import { Login } from './components/Login';
-import { Workspace } from './Workspace';
-import { ControlTower } from './components/ControlTower';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useTheme } from './hooks/useTheme';
+import { can } from './rbac';
 import type { AuthUser } from './types';
 import './components/Login.css';
 
+const Workspace = lazy(() => import('./Workspace').then((module) => ({ default: module.Workspace })));
+const ControlTower = lazy(() => import('./components/ControlTower').then((module) => ({ default: module.ControlTower })));
+const PortalDashboard = lazy(() => import('./components/PortalDashboard').then((module) => ({ default: module.PortalDashboard })));
+const BorrowerExperience = lazy(() => import('./components/BorrowerExperience').then((module) => ({ default: module.BorrowerExperience })));
+
 type BootState =
-  | { phase: 'checking' }
-  | { phase: 'anon' }
+  | { phase: 'public' }
   | { phase: 'authed'; user: AuthUser };
 
-// App = ErrorBoundary bọc AppInner: 1 lỗi render bất kỳ nhánh nào (Login/Tower/Workspace)
-// → fallback UI thay vì trắng màn. Boundary ở ngoài cùng để bắt cả lỗi trong boot/gate.
+// Boundary ngoài cùng bắt lỗi ở mọi nhánh public/portal/workspace để tránh màn trắng.
 export default function App() {
   return (
     <ErrorBoundary>
@@ -28,49 +27,100 @@ export default function App() {
   );
 }
 
-function AppInner() {
-  const [boot, setBoot] = useState<BootState>({ phase: 'checking' });
-  const [view, setView] = useState<'workspace' | 'tower'>('workspace'); // Control Tower toggle (admin)
+function ViewLoading() {
+  return <div className="app-view-loading" role="status">Đang mở nội dung…</div>;
+}
 
-  // boot-check /me lúc mount (D-39). Lỗi/401 → anon (Login). 200 → authed (skip Login).
+function AppInner() {
+  const [boot, setBoot] = useState<BootState>({ phase: 'public' });
+  const [showStaffLogin, setShowStaffLogin] = useState(false);
+  const [view, setView] = useState<'portal' | 'workspace' | 'tower'>('portal');
+  const [towerBackView, setTowerBackView] = useState<'portal' | 'workspace'>('portal');
+  const { theme, toggleTheme } = useTheme();
+
+  const completeLogin = (user: AuthUser) => {
+    setView('portal');
+    setTowerBackView('portal');
+    setShowStaffLogin(false);
+    setBoot({ phase: 'authed', user });
+  };
+
+  const expireAuth = () => {
+    setView('portal');
+    setTowerBackView('portal');
+    setShowStaffLogin(false);
+    setBoot({ phase: 'public' });
+  };
+
+  const logout = () => {
+    expireAuth();
+    void conversationApi.logout().catch(() => undefined);
+  };
+
+  // Cửa khách hiển thị ngay, không cần đăng nhập. Nếu đã có phiên nhân viên hợp lệ thì chuyển
+  // vào portal nội bộ sau khi /me hoàn tất; lỗi/401 không làm gián đoạn trải nghiệm khách vay.
   useEffect(() => {
     let alive = true;
     conversationApi
       .me()
       .then((res) => {
-        if (alive) setBoot({ phase: 'authed', user: res.user });
+        if (alive && res.user.role !== 'customer') setBoot({ phase: 'authed', user: res.user });
       })
-      .catch(() => {
-        if (alive) setBoot({ phase: 'anon' });
-      });
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, []);
 
-  if (boot.phase === 'checking') {
+  if (boot.phase === 'public') {
+    if (showStaffLogin) {
+      return <Login onSuccess={completeLogin} onBack={() => setShowStaffLogin(false)} />;
+    }
     return (
-      <div className="login">
-        <div className="boot-check" role="status">Đang kiểm tra phiên đăng nhập…</div>
-      </div>
+      <Suspense fallback={<ViewLoading />}>
+        <BorrowerExperience
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onStaffLogin={() => setShowStaffLogin(true)}
+        />
+      </Suspense>
     );
   }
 
-  if (boot.phase === 'anon') {
-    return <Login onSuccess={(user) => setBoot({ phase: 'authed', user })} />;
+  const isAdmin = can(boot.user, 'monitoring.read');
+  if (view === 'tower' && isAdmin) {
+    return (
+      <Suspense fallback={<ViewLoading />}>
+        <ControlTower onBack={() => setView(towerBackView)} />
+      </Suspense>
+    );
   }
 
-  // Control Tower = màn admin (D-19). Admin toggle sang tower; user chỉ Workspace.
-  const isAdmin = boot.user.role === 'admin';
-  if (view === 'tower' && isAdmin) {
-    return <ControlTower onBack={() => setView('workspace')} />;
+  if (view === 'portal') {
+    return (
+      <Suspense fallback={<ViewLoading />}>
+        <PortalDashboard
+          user={boot.user}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenWorkspace={() => setView('workspace')}
+          onOpenTower={isAdmin ? () => { setTowerBackView('portal'); setView('tower'); } : undefined}
+          onAuthExpired={logout}
+        />
+      </Suspense>
+    );
   }
 
   return (
-    <Workspace
-      user={boot.user}
-      onAuthExpired={() => setBoot({ phase: 'anon' })}
-      onOpenTower={isAdmin ? () => setView('tower') : undefined}
-    />
+    <Suspense fallback={<ViewLoading />}>
+      <Workspace
+        user={boot.user}
+        onAuthExpired={logout}
+        onOpenPortal={() => setView('portal')}
+        onOpenTower={isAdmin ? () => { setTowerBackView('workspace'); setView('tower'); } : undefined}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+    </Suspense>
   );
 }

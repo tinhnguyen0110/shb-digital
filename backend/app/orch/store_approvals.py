@@ -40,11 +40,23 @@ def _row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _list_pending_sync(conv_id: str | None) -> list[dict[str, Any]]:
+def _list_pending_sync(conv_id: str | None, tenant_id: str | None = None) -> list[dict[str, Any]]:
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if conv_id:
+            if tenant_id and conv_id:
+                cur.execute(
+                    "SELECT a.* FROM approvals a JOIN conversations c ON c.id::text=a.conv_id "
+                    "WHERE a.status='pending' AND a.conv_id=%s AND c.tenant_id=%s ORDER BY a.id",
+                    (conv_id, tenant_id),
+                )
+            elif tenant_id:
+                cur.execute(
+                    "SELECT a.* FROM approvals a JOIN conversations c ON c.id::text=a.conv_id "
+                    "WHERE a.status='pending' AND c.tenant_id=%s ORDER BY a.id",
+                    (tenant_id,),
+                )
+            elif conv_id:
                 cur.execute(
                     "SELECT * FROM approvals WHERE status='pending' AND conv_id=%s ORDER BY id",
                     (conv_id,),
@@ -56,7 +68,13 @@ def _list_pending_sync(conv_id: str | None) -> list[dict[str, Any]]:
         conn.close()
 
 
-def _decide_sync(approval_id: str, decision: str, decided_by: str, reason: str | None) -> dict[str, Any] | None:
+def _decide_sync(
+    approval_id: str,
+    decision: str,
+    decided_by: str,
+    reason: str | None,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
     """ATOMIC một chiều: UPDATE…WHERE id AND status='pending' RETURNING. rowcount 0 (đã quyết/
     không tồn tại) → None. rowcount 1 → row decided (có conv_id, action để đánh thức main).
 
@@ -67,11 +85,20 @@ def _decide_sync(approval_id: str, decision: str, decided_by: str, reason: str |
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "UPDATE approvals SET status=%s, decided_by=%s, decided_at=now(), reason=%s "
-                "WHERE id=%s AND status='pending' RETURNING *",
-                (status, decided_by, reason, approval_id),
-            )
+            if tenant_id:
+                cur.execute(
+                    "UPDATE approvals a SET status=%s, decided_by=%s, decided_at=now(), reason=%s "
+                    "WHERE a.id=%s AND a.status='pending' AND EXISTS "
+                    "(SELECT 1 FROM conversations c WHERE c.id::text=a.conv_id AND c.tenant_id=%s) "
+                    "RETURNING a.*",
+                    (status, decided_by, reason, approval_id, tenant_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE approvals SET status=%s, decided_by=%s, decided_at=now(), reason=%s "
+                    "WHERE id=%s AND status='pending' RETURNING *",
+                    (status, decided_by, reason, approval_id),
+                )
             row = cur.fetchone()
             if row is None:
                 conn.commit()
@@ -159,12 +186,19 @@ def _mark_exec_failed_sync(approval_id: str) -> None:
         conn.close()
 
 
-def _exists_sync(approval_id: str) -> bool:
+def _exists_sync(approval_id: str, tenant_id: str | None = None) -> bool:
     """Phân biệt 404 (không tồn tại) vs 409 (đã quyết) khi decide trả None."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM approvals WHERE id=%s", (approval_id,))
+            if tenant_id:
+                cur.execute(
+                    "SELECT 1 FROM approvals a JOIN conversations c ON c.id::text=a.conv_id "
+                    "WHERE a.id=%s AND c.tenant_id=%s",
+                    (approval_id, tenant_id),
+                )
+            else:
+                cur.execute("SELECT 1 FROM approvals WHERE id=%s", (approval_id,))
             return cur.fetchone() is not None
     except psycopg2.Error:
         return False  # id sai format uuid → coi như không tồn tại
@@ -173,16 +207,22 @@ def _exists_sync(approval_id: str) -> bool:
 
 
 # ── async wrappers (D-22: sync qua to_thread) ───────────────────────────────
-async def list_pending(conv_id: str | None = None) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(_list_pending_sync, conv_id)
+async def list_pending(conv_id: str | None = None, tenant_id: str | None = None) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(_list_pending_sync, conv_id, tenant_id)
 
 
-async def decide(approval_id: str, decision: str, decided_by: str, reason: str | None = None) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_decide_sync, approval_id, decision, decided_by, reason)
+async def decide(
+    approval_id: str,
+    decision: str,
+    decided_by: str,
+    reason: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    return await asyncio.to_thread(_decide_sync, approval_id, decision, decided_by, reason, tenant_id)
 
 
-async def approval_exists(approval_id: str) -> bool:
-    return await asyncio.to_thread(_exists_sync, approval_id)
+async def approval_exists(approval_id: str, tenant_id: str | None = None) -> bool:
+    return await asyncio.to_thread(_exists_sync, approval_id, tenant_id)
 
 
 async def peek_grant(conv_id: str) -> dict[str, Any] | None:
